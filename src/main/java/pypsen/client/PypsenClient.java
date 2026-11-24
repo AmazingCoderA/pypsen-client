@@ -6,11 +6,13 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.Camera;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.AxeItem;
 import net.minecraft.item.ItemStack;
@@ -20,6 +22,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
@@ -49,11 +52,23 @@ public class PypsenClient implements ClientModInitializer {
     public static boolean seeInvisOn = false, noFireOn = false, noNauseaOn = false;
     public static boolean targetEspOn = false, noHurtCamOn = false;
 
+    // ══════════ 2D ESP OVERLAY ══════════
+    public static boolean espOn = false, espBoxesOn = true, espNamesOn = true, espHealthOn = true;
+    public static boolean espDistanceOn = true, espItemsOn = false, espTracersOn = false, espFillOn = false;
+    public static boolean espPlayersOn = true, espMobsOn = true, espAnimalsOn = false;
+    public static float espRange = 64f;
+
     // ══════════ KILLAURA ADVANCED ══════════
     public static boolean auraJump = false, auraThroughWalls = true, auraHitInGuis = true;
     public static boolean autoWeapon = false, criticals = false, shieldBreaker = false, waterCrits = false;
     public static boolean auraRayCast = true;
     public static boolean auraTargetPlayers = true, auraTargetMobs = false, auraTargetAnimals = false;
+
+    // ══════════ TRIGGERBOT ADVANCED ══════════
+    public static boolean triggerThroughWalls = false, triggerSmartDelay = true;
+    public static boolean triggerTargetPlayers = true, triggerTargetMobs = false, triggerTargetAnimals = false;
+    public static boolean triggerAutoWeapon = false, triggerCriticals = false, triggerWaitHurtTime = true;
+    public static float triggerCooldown = 0.95f, triggerJitter = 10f, triggerFov = 30f;
 
     // ══════════ VALUES ══════════
     public static float speedVal = 5f, auraRange = 6f, hitboxVal = 1f, flySpeed = 2f;
@@ -78,7 +93,7 @@ public class PypsenClient implements ClientModInitializer {
     public static final String[] AURA_MODES = {"1.9 (Strict Cooldown)", "1.8 (Spam)", "Adaptive"};
     public static final String[] AURA_TARGETS = {"Distance", "Health", "Armor", "Angle"};
     public static final String[] AURA_ROTS = {"None", "Snap", "Smooth", "Silent", "Matrix", "Predict", "Smart", "Legit", "HvH", "Derp", "Cinematic", "NCP", "AAC", "Sunrise", "Vulcan", "Intave", "Legit Smooth", "Looping", "LiquidBounce", "Custom", "Noise"};
-    public static final String[] AURA_TIMINGS = {"All", "Fall (Crits)"};
+    public static final String[] AURA_TIMINGS = {"All", "Fall (Crits)", "Jump (Crits)"};
     public static final String[] AURA_PARTS = {"Head", "Chest", "Legs", "Feet"};
     public static final String[] VISUALS_TARGETS = {"All", "Enemies", "Friends"};
     public static final String[] TOTEM_MODES = {"Instant", "Legit"};
@@ -107,6 +122,7 @@ public class PypsenClient implements ClientModInitializer {
     public static int keySpider = GLFW.GLFW_KEY_UNKNOWN, keyNoWeb = GLFW.GLFW_KEY_UNKNOWN, keyFreeze = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyCrasher = GLFW.GLFW_KEY_UNKNOWN, keyGodMode = GLFW.GLFW_KEY_UNKNOWN, keyAutoArmor = GLFW.GLFW_KEY_UNKNOWN, keyFastBow = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyAirJump = GLFW.GLFW_KEY_UNKNOWN, keyNoFall = GLFW.GLFW_KEY_UNKNOWN, keyJesus = GLFW.GLFW_KEY_UNKNOWN;
+    public static int keyEsp = GLFW.GLFW_KEY_UNKNOWN;
 
     public static final Set<String> friends = new HashSet<>();
     private static boolean middleClickWasDown = false;
@@ -127,6 +143,7 @@ public class PypsenClient implements ClientModInitializer {
     ));
 
     private static int auraTick = 0, clickTimer = 0, triggerTimer = 0;
+    private static float triggerFloatTimer = 0f;
     private static boolean xrayWasOn = false, visualsWasOn = false;
     private static LivingEntity currentTarget = null;
 
@@ -175,7 +192,8 @@ public class PypsenClient implements ClientModInitializer {
                 if (fullBrightOn)  lines.add("\u00a7eFullBright");
                 if (nameHiderOn)   lines.add("\u00a7dNameHider");
                 if (autoClickerOn) lines.add("\u00a7cAutoClicker \u00a77" + String.format("%.1f", clickerCps) + (autoClickerRight ? " [RMB]" : " [LMB]"));
-                if (triggerBotOn)  lines.add("\u00a7cTriggerBot \u00a77" + String.format("%.1f", triggerCps));
+                if (triggerBotOn)  lines.add("\u00a7cTriggerBot \u00a77" + String.format("%.1f", triggerCps) + " \u00a78[" + String.format("%.0f", triggerJitter) + "% jit]");
+                if (espOn)         lines.add("\u00a7b2D ESP \u00a77" + String.format("%.0fm", espRange));
 
                 // TPS & Ping
                 lines.add("");
@@ -216,6 +234,9 @@ public class PypsenClient implements ClientModInitializer {
                 ctx.fill(tx + 5, ty + 35, tx + 5 + 130, ty + 42, 0xFF333333);
                 ctx.fill(tx + 5, ty + 35, tx + 5 + hpBarWidth, ty + 42, getHealthColor(hp, maxHp));
             }
+
+            // ── 2D ESP OVERLAY ──
+            drawEsp(ctx, mc, tickDelta);
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
@@ -292,6 +313,7 @@ public class PypsenClient implements ClientModInitializer {
                 if (wasPressed(handle, keyAntiFlag))    antiFlagOn    = !antiFlagOn;
                 if (wasPressed(handle, keyAutoClicker)) autoClickerOn = !autoClickerOn;
                 if (wasPressed(handle, keyTriggerBot))  triggerBotOn  = !triggerBotOn;
+                if (wasPressed(handle, keyEsp))         espOn         = !espOn;
                 if (wasPressed(handle, keyAutoTotem))   autoTotemOn   = !autoTotemOn;
                 if (wasPressed(handle, keyAimLock))     aimLockOn     = !aimLockOn;
                 if (wasPressed(handle, keySpider))      spiderOn      = !spiderOn;
@@ -736,31 +758,63 @@ public class PypsenClient implements ClientModInitializer {
             }
 
             // ── TRIGGERBOT ──
-            if (triggerBotOn && mc.currentScreen == null) {
-                triggerTimer++;
-                int delay = (int) (20f / Math.max(1f, triggerCps));
-                if (triggerTimer >= delay) {
-                    triggerTimer = 0;
+            if (triggerBotOn && mc.currentScreen == null && mc.interactionManager != null) {
+                triggerFloatTimer += 1f;
+                float ticksPerHit = 20f / Math.max(1f, triggerCps);
+                if (triggerJitter > 0f) {
+                    ticksPerHit *= 1f + (float) (Math.random() - 0.5) * 2f * (triggerJitter / 100f);
+                }
+                ticksPerHit = Math.max(1f, ticksPerHit);
+
+                if (triggerFloatTimer >= ticksPerHit) {
+                    triggerFloatTimer = 0f;
+                    triggerTimer++;
+
+                    Entity target = null;
                     if (mc.crosshairTarget != null && mc.crosshairTarget.getType() == HitResult.Type.ENTITY) {
-                        Entity target = ((EntityHitResult) mc.crosshairTarget).getEntity();
-                        if (target instanceof LivingEntity && target.isAlive() && target != p) {
-                            boolean isWeapon = p.getMainHandStack().getItem() instanceof SwordItem || p.getMainHandStack().getItem() instanceof AxeItem;
-                            if (!triggerWeaponOnly || isWeapon) {
-                                if (p.distanceTo(target) <= triggerRange && !friends.contains(target.getName().getString())) {
-                                    if (p.getAttackCooldownProgress(0.0f) >= 0.95f && ((LivingEntity) target).hurtTime == 0) {
-                                        if (mc.interactionManager != null) {
-                                            mc.interactionManager.attackEntity(p, target);
-                                            p.swingHand(Hand.MAIN_HAND);
-                                            p.resetLastAttackedTicks();
-                                        }
-                                    }
+                        Entity aimed = ((EntityHitResult) mc.crosshairTarget).getEntity();
+                        if (isValidTriggerTarget(aimed, p, mc)) target = aimed;
+                    }
+
+                    // Through-walls mode scans for the closest entity inside the configured cone.
+                    if (target == null && triggerThroughWalls) {
+                        double bestAngle = Double.MAX_VALUE;
+                        for (Entity candidate : mc.world.getEntities()) {
+                            if (!isValidTriggerTarget(candidate, p, mc)) continue;
+                            double angle = getAngleDifference(p, candidate);
+                            if (angle < bestAngle) {
+                                bestAngle = angle;
+                                target = candidate;
+                            }
+                        }
+                        if (target != null && bestAngle > MathHelper.clamp(triggerFov, 1f, 180f) * 0.5f) target = null;
+                    }
+
+                    if (target != null) {
+                        boolean isWeapon = p.getMainHandStack().getItem() instanceof SwordItem || p.getMainHandStack().getItem() instanceof AxeItem;
+                        if (!triggerWeaponOnly || isWeapon) {
+                            boolean cooldownOk = !triggerSmartDelay || p.getAttackCooldownProgress(0.0f) >= MathHelper.clamp(triggerCooldown, 0f, 1f);
+                            boolean targetReady = !triggerWaitHurtTime || ((LivingEntity) target).hurtTime == 0;
+                            if (cooldownOk && targetReady) {
+                                if (triggerAutoWeapon) {
+                                    int slot = findBestWeapon(p, p.getMainHandStack().getItem() instanceof AxeItem);
+                                    if (slot >= 0) p.getInventory().selectedSlot = slot;
                                 }
+                                if (triggerCriticals && (p.isOnGround() || p.isTouchingWater())) {
+                                    p.addVelocity(0, 0.1, 0);
+                                    p.fallDistance = 0.1f;
+                                    p.setOnGround(false);
+                                }
+                                mc.interactionManager.attackEntity(p, target);
+                                p.swingHand(Hand.MAIN_HAND);
+                                p.resetLastAttackedTicks();
                             }
                         }
                     }
                 }
             } else {
                 triggerTimer = 0;
+                triggerFloatTimer = 0f;
             }
 
             // ── FULLBRIGHT ──
@@ -832,7 +886,7 @@ public class PypsenClient implements ClientModInitializer {
                 var list = mc.world.getOtherEntities(p, p.getBoundingBox().expand(15), e -> e instanceof LivingEntity && e.isAlive() && !e.isSpectator());
                 Entity target = list.stream().min(Comparator.comparingDouble(e -> e.distanceTo(p))).orElse(null);
                 if (target != null) {
-                    float[] rots = getRotations(p, target);
+                    float[] rots = getRotations(p, target, false);
                     if (aimLockOn) {
                         p.setYaw(rots[0]);
                         p.setPitch(rots[1]);
@@ -1181,6 +1235,8 @@ public class PypsenClient implements ClientModInitializer {
                             if (canHit) {
                                 if (auraTimingMode == 1) { // Fall (Crits)
                                     if (p.getVelocity().y >= 0 || p.isOnGround()) canHit = false;
+                                } else if (auraTimingMode == 2) { // Jump (Crits)
+                                    if (p.isOnGround() || p.getVelocity().y <= 0) canHit = false;
                                 }
                             }
 
@@ -1240,19 +1296,11 @@ public class PypsenClient implements ClientModInitializer {
 
                             // 4. Attack
                             if (canHit) {
-                                // AutoWeapon
-                                if (autoWeapon) {
-                                    int bestSlot = -1;
-                                    float bestDamage = -1;
-                                    for (int i = 0; i < 9; i++) {
-                                        ItemStack stack = p.getInventory().getStack(i);
-                                        if (stack.getItem() instanceof SwordItem sword) {
-                                            if (sword.getAttackDamage() > bestDamage) { bestDamage = sword.getAttackDamage(); bestSlot = i; }
-                                        } else if (stack.getItem() instanceof AxeItem axe) {
-                                            if (axe.getAttackDamage() > bestDamage) { bestDamage = axe.getAttackDamage(); bestSlot = i; }
-                                        }
-                                    }
-                                    if (bestSlot != -1) p.getInventory().selectedSlot = bestSlot;
+                                // Weapon selection: Shield Breaker works even with AutoWeapon off.
+                                boolean blockingPlayer = shieldBreaker && target instanceof net.minecraft.entity.player.PlayerEntity tp && tp.isBlocking();
+                                if (autoWeapon || blockingPlayer) {
+                                    int bestSlot = findBestWeapon(p, blockingPlayer);
+                                    if (bestSlot >= 0) p.getInventory().selectedSlot = bestSlot;
                                 }
 
                                 // Criticals (Mini-jump)
@@ -1306,6 +1354,10 @@ public class PypsenClient implements ClientModInitializer {
     }
 
     private static float[] getRotations(Entity p, Entity target) {
+        return getRotations(p, target, true);
+    }
+
+    private static float[] getRotations(Entity p, Entity target, boolean applyAuraJitter) {
         double targetX = target.getX();
         double targetZ = target.getZ();
         double targetY = target.getY();
@@ -1323,7 +1375,7 @@ public class PypsenClient implements ClientModInitializer {
             case 3 -> {} // Feet
         }
 
-        if (auraAimJitter > 0 || auraRandomize) {
+        if (applyAuraJitter && (auraAimJitter > 0 || auraRandomize)) {
             double jitter = auraRandomize ? Math.max(auraAimJitter, 0.1) : auraAimJitter;
             targetX += (Math.random() - 0.5) * jitter;
             targetY += (Math.random() - 0.5) * jitter;
@@ -1355,6 +1407,46 @@ public class PypsenClient implements ClientModInitializer {
         return -1;
     }
 
+    private static int findBestWeapon(net.minecraft.client.network.ClientPlayerEntity p, boolean preferAxe) {
+        int bestSlot = -1;
+        float bestDamage = -1f;
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = p.getInventory().getStack(i);
+            if (stack.isEmpty()) continue;
+            float damage;
+            if (stack.getItem() instanceof SwordItem sword) {
+                damage = sword.getAttackDamage();
+            } else if (stack.getItem() instanceof AxeItem axe) {
+                damage = axe.getAttackDamage();
+            } else {
+                continue;
+            }
+            if (preferAxe && stack.getItem() instanceof AxeItem) damage += 1000f;
+            if (damage > bestDamage) {
+                bestDamage = damage;
+                bestSlot = i;
+            }
+        }
+        return bestSlot;
+    }
+
+    private static boolean isValidTriggerTarget(Entity e, net.minecraft.client.network.ClientPlayerEntity p, MinecraftClient mc) {
+        if (!(e instanceof LivingEntity living) || !living.isAlive() || e == p || e.isSpectator()) return false;
+        if (friends.contains(e.getName().getString())) return false;
+        if (p.distanceTo(e) > triggerRange) return false;
+
+        boolean isPlayer = e instanceof net.minecraft.entity.player.PlayerEntity;
+        boolean isMob = e instanceof net.minecraft.entity.mob.HostileEntity;
+        boolean isAnimal = e instanceof net.minecraft.entity.passive.AnimalEntity;
+        if (isPlayer && !triggerTargetPlayers) return false;
+        if (isMob && !triggerTargetMobs) return false;
+        if (isAnimal && !triggerTargetAnimals) return false;
+
+        if (antiBotOn && isPlayer && (e.age < 20 || e.getName().getString().isEmpty() || e.getName().getString().contains(" "))) return false;
+        if (!triggerThroughWalls && !p.canSee(e)) return false;
+        return true;
+    }
+
     private static int getHealthColor(float hp, float maxHp) {
         float ratio = hp / maxHp;
         if (ratio > 0.75f) return 0xFF00FF00; // Green
@@ -1364,8 +1456,158 @@ public class PypsenClient implements ClientModInitializer {
     }
 
     private static double getAngleDifference(Entity p, Entity e) {
-        float[] rots = getRotations(p, e);
-        return Math.abs(p.getYaw() - rots[0]);
+        float[] rots = getRotations(p, e, false);
+        return Math.abs(MathHelper.wrapDegrees(p.getYaw() - rots[0]));
+    }
+
+    private static float[] projectToScreen(Vec3d pos, Vec3d camPos, org.joml.Vector3f right,
+                                           org.joml.Vector3f up, org.joml.Vector3f forward,
+                                           double focal, int sw, int sh) {
+        double rx = pos.x - camPos.x;
+        double ry = pos.y - camPos.y;
+        double rz = pos.z - camPos.z;
+        double cx = rx * right.x + ry * right.y + rz * right.z;
+        double cy = rx * up.x + ry * up.y + rz * up.z;
+        double cz = rx * forward.x + ry * forward.y + rz * forward.z;
+        if (cz <= 0.1) return null;
+
+        float sx = (float) (sw * 0.5 + (cx / cz) * focal);
+        float sy = (float) (sh * 0.5 - (cy / cz) * focal);
+        if (sx < -4096f || sx > 4096f || sy < -4096f || sy > 4096f) return null;
+        return new float[]{sx, sy, (float) cz};
+    }
+
+    private static void drawEspLine(DrawContext ctx, int x0, int y0, int x1, int y1, int color) {
+        int dx = Math.abs(x1 - x0);
+        int dy = Math.abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+        while (true) {
+            ctx.fill(x0, y0, x0 + 1, y0 + 1, color);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = err * 2;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
+    }
+
+    private static int espColor(Entity e) {
+        if (e == currentTarget) return 0xFFFFFF00;
+        if (e instanceof net.minecraft.entity.player.PlayerEntity) {
+            return friends.contains(e.getName().getString()) ? 0xFF55FF55 : 0xFFFF5555;
+        }
+        if (e instanceof ItemEntity) return 0xFF55FFFF;
+        if (e instanceof net.minecraft.entity.mob.HostileEntity) return 0xFFFF8800;
+        return 0xFF55FF55;
+    }
+
+    private static void drawEsp(DrawContext ctx, MinecraftClient mc, float tickDelta) {
+        if (!espOn || mc.world == null || mc.player == null) return;
+        Camera camera = mc.gameRenderer.getCamera();
+        if (!camera.isReady()) return;
+
+        Vec3d camPos = camera.getPos();
+        org.joml.Vector3f right = camera.getDiagonalPlane();
+        org.joml.Vector3f up = camera.getVerticalPlane();
+        org.joml.Vector3f forward = camera.getHorizontalPlane();
+
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        double fov = mc.options.getFov().getValue().floatValue();
+        double halfFov = Math.toRadians(fov) * 0.5;
+        double focal = (sh * 0.5) / Math.tan(halfFov);
+        if (!Double.isFinite(focal) || focal <= 0 || halfFov <= 0 || halfFov >= Math.PI * 0.5) return;
+
+        for (Entity e : mc.world.getEntities()) {
+            if (e == mc.player || e.isSpectator()) continue;
+
+            boolean isItem = e instanceof ItemEntity;
+            if (!isItem && !(e instanceof LivingEntity)) continue;
+            if (e instanceof LivingEntity && !((LivingEntity) e).isAlive()) continue;
+
+            if (isItem) {
+                if (!espItemsOn) continue;
+            } else {
+                boolean isPlayer = e instanceof net.minecraft.entity.player.PlayerEntity;
+                boolean isMob = e instanceof net.minecraft.entity.mob.HostileEntity;
+                boolean isAnimal = e instanceof net.minecraft.entity.passive.AnimalEntity;
+                if (isPlayer && !espPlayersOn) continue;
+                if (isMob && !espMobsOn) continue;
+                if (isAnimal && !espAnimalsOn) continue;
+            }
+
+            double dist = mc.player.distanceTo(e);
+            if (dist > espRange) continue;
+
+            Box box = e.getBoundingBox();
+            double ox = MathHelper.lerp(tickDelta, e.prevX, e.getX()) - e.getX();
+            double oy = MathHelper.lerp(tickDelta, e.prevY, e.getY()) - e.getY();
+            double oz = MathHelper.lerp(tickDelta, e.prevZ, e.getZ()) - e.getZ();
+            double minX = box.minX + ox, minY = box.minY + oy, minZ = box.minZ + oz;
+            double maxX = box.maxX + ox, maxY = box.maxY + oy, maxZ = box.maxZ + oz;
+
+            float minSx = Float.POSITIVE_INFINITY, minSy = Float.POSITIVE_INFINITY;
+            float maxSx = Float.NEGATIVE_INFINITY, maxSy = Float.NEGATIVE_INFINITY;
+            boolean fullyVisible = true;
+
+            for (int i = 0; i < 8; i++) {
+                double px = (i & 1) == 0 ? minX : maxX;
+                double py = (i & 2) == 0 ? minY : maxY;
+                double pz = (i & 4) == 0 ? minZ : maxZ;
+                float[] s = projectToScreen(new Vec3d(px, py, pz), camPos, right, up, forward, focal, sw, sh);
+                if (s == null) { fullyVisible = false; break; }
+                minSx = Math.min(minSx, s[0]);
+                minSy = Math.min(minSy, s[1]);
+                maxSx = Math.max(maxSx, s[0]);
+                maxSy = Math.max(maxSy, s[1]);
+            }
+            if (!fullyVisible || maxSx < minSx || maxSy < minSy) continue;
+
+            int x1 = MathHelper.clamp((int) minSx, 0, sw);
+            int y1 = MathHelper.clamp((int) minSy, 0, sh);
+            int x2 = MathHelper.clamp((int) maxSx, 0, sw);
+            int y2 = MathHelper.clamp((int) maxSy, 0, sh);
+            if (x2 - x1 < 2 || y2 - y1 < 2) continue;
+
+            int color = espColor(e);
+            if (espFillOn) ctx.fill(x1, y1, x2, y2, (color & 0x00FFFFFF) | 0x22000000);
+
+            if (espBoxesOn || isItem) {
+                ctx.fill(x1, y1, x2, y1 + 1, color);
+                ctx.fill(x1, y2 - 1, x2, y2, color);
+                ctx.fill(x1, y1, x1 + 1, y2, color);
+                ctx.fill(x2 - 1, y1, x2, y2, color);
+            }
+
+            if (espTracersOn) {
+                drawEspLine(ctx, sw / 2, sh - 1, (x1 + x2) / 2, (y1 + y2) / 2, (color & 0x00FFFFFF) | 0x88000000);
+            }
+
+            String label;
+            if (isItem) {
+                ItemStack stack = ((ItemEntity) e).getStack();
+                label = stack.getName().getString() + " x" + stack.getCount();
+            } else {
+                label = e.getName().getString();
+            }
+
+            int textY = Math.max(2, y1 - 11);
+            if (espNamesOn) {
+                ctx.drawTextWithShadow(mc.textRenderer, Text.literal(label), x1, textY, color);
+                textY -= 10;
+            }
+            if (espDistanceOn) {
+                ctx.drawTextWithShadow(mc.textRenderer, Text.literal(String.format("%.1fm", dist)), x2 + 3, y1, 0xFFAAAAAA);
+            }
+            if (espHealthOn && e instanceof LivingEntity living) {
+                float ratio = living.getMaxHealth() > 0 ? living.getHealth() / living.getMaxHealth() : 0f;
+                ratio = MathHelper.clamp(ratio, 0f, 1f);
+                int barW = Math.max(1, x2 - x1);
+                ctx.fill(x1, y2 + 2, x1 + barW, y2 + 5, 0xFF333333);
+                ctx.fill(x1, y2 + 2, x1 + (int) (barW * ratio), y2 + 5, getHealthColor(living.getHealth(), living.getMaxHealth()));
+            }
+        }
     }
 
     private static final Set<Integer> pressedKeys = new HashSet<>();
@@ -1457,6 +1699,31 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("targetEspOn=" + targetEspOn + "\n");
             writer.write("noHurtCamOn=" + noHurtCamOn + "\n");
             writer.write("playerEspOn=" + playerEspOn + "\n");
+            writer.write("shieldBreaker=" + shieldBreaker + "\n");
+            writer.write("keyEsp=" + keyEsp + "\n");
+            writer.write("espOn=" + espOn + "\n");
+            writer.write("espBoxesOn=" + espBoxesOn + "\n");
+            writer.write("espNamesOn=" + espNamesOn + "\n");
+            writer.write("espHealthOn=" + espHealthOn + "\n");
+            writer.write("espDistanceOn=" + espDistanceOn + "\n");
+            writer.write("espItemsOn=" + espItemsOn + "\n");
+            writer.write("espTracersOn=" + espTracersOn + "\n");
+            writer.write("espFillOn=" + espFillOn + "\n");
+            writer.write("espPlayersOn=" + espPlayersOn + "\n");
+            writer.write("espMobsOn=" + espMobsOn + "\n");
+            writer.write("espAnimalsOn=" + espAnimalsOn + "\n");
+            writer.write("espRange=" + espRange + "\n");
+            writer.write("triggerThroughWalls=" + triggerThroughWalls + "\n");
+            writer.write("triggerSmartDelay=" + triggerSmartDelay + "\n");
+            writer.write("triggerTargetPlayers=" + triggerTargetPlayers + "\n");
+            writer.write("triggerTargetMobs=" + triggerTargetMobs + "\n");
+            writer.write("triggerTargetAnimals=" + triggerTargetAnimals + "\n");
+            writer.write("triggerAutoWeapon=" + triggerAutoWeapon + "\n");
+            writer.write("triggerCriticals=" + triggerCriticals + "\n");
+            writer.write("triggerWaitHurtTime=" + triggerWaitHurtTime + "\n");
+            writer.write("triggerCooldown=" + triggerCooldown + "\n");
+            writer.write("triggerJitter=" + triggerJitter + "\n");
+            writer.write("triggerFov=" + triggerFov + "\n");
             writer.write("friends=" + String.join(",", friends) + "\n");
             writer.close();
         } catch (Exception e) {
@@ -1535,12 +1802,50 @@ public class PypsenClient implements ClientModInitializer {
                     case "targetEspOn" -> targetEspOn = Boolean.parseBoolean(val);
                     case "noHurtCamOn" -> noHurtCamOn = Boolean.parseBoolean(val);
                     case "playerEspOn" -> playerEspOn = Boolean.parseBoolean(val);
+                    case "shieldBreaker" -> shieldBreaker = Boolean.parseBoolean(val);
+                    case "keyEsp" -> keyEsp = Integer.parseInt(val);
+                    case "espOn" -> espOn = Boolean.parseBoolean(val);
+                    case "espBoxesOn" -> espBoxesOn = Boolean.parseBoolean(val);
+                    case "espNamesOn" -> espNamesOn = Boolean.parseBoolean(val);
+                    case "espHealthOn" -> espHealthOn = Boolean.parseBoolean(val);
+                    case "espDistanceOn" -> espDistanceOn = Boolean.parseBoolean(val);
+                    case "espItemsOn" -> espItemsOn = Boolean.parseBoolean(val);
+                    case "espTracersOn" -> espTracersOn = Boolean.parseBoolean(val);
+                    case "espFillOn" -> espFillOn = Boolean.parseBoolean(val);
+                    case "espPlayersOn" -> espPlayersOn = Boolean.parseBoolean(val);
+                    case "espMobsOn" -> espMobsOn = Boolean.parseBoolean(val);
+                    case "espAnimalsOn" -> espAnimalsOn = Boolean.parseBoolean(val);
+                    case "espRange" -> espRange = Float.parseFloat(val);
+                    case "triggerThroughWalls" -> triggerThroughWalls = Boolean.parseBoolean(val);
+                    case "triggerSmartDelay" -> triggerSmartDelay = Boolean.parseBoolean(val);
+                    case "triggerTargetPlayers" -> triggerTargetPlayers = Boolean.parseBoolean(val);
+                    case "triggerTargetMobs" -> triggerTargetMobs = Boolean.parseBoolean(val);
+                    case "triggerTargetAnimals" -> triggerTargetAnimals = Boolean.parseBoolean(val);
+                    case "triggerAutoWeapon" -> triggerAutoWeapon = Boolean.parseBoolean(val);
+                    case "triggerCriticals" -> triggerCriticals = Boolean.parseBoolean(val);
+                    case "triggerWaitHurtTime" -> triggerWaitHurtTime = Boolean.parseBoolean(val);
+                    case "triggerCooldown" -> triggerCooldown = Float.parseFloat(val);
+                    case "triggerJitter" -> triggerJitter = Float.parseFloat(val);
+                    case "triggerFov" -> triggerFov = Float.parseFloat(val);
                     case "friends" -> {
                         friends.clear();
                         if (!val.isEmpty()) friends.addAll(Arrays.asList(val.split(",")));
                     }
                 }
             }
+
+            // Keep every parsed value inside the range the GUI and modes expect.
+            espRange = MathHelper.clamp(espRange, 5f, 256f);
+            triggerRange = MathHelper.clamp(triggerRange, 1f, 12f);
+            triggerCps = MathHelper.clamp(triggerCps, 1f, 50f);
+            triggerCooldown = MathHelper.clamp(triggerCooldown, 0f, 1f);
+            triggerJitter = MathHelper.clamp(triggerJitter, 0f, 100f);
+            triggerFov = MathHelper.clamp(triggerFov, 1f, 180f);
+            auraMode = MathHelper.clamp(auraMode, 0, AURA_MODES.length - 1);
+            auraRotMode = MathHelper.clamp(auraRotMode, 0, AURA_ROTS.length - 1);
+            auraTimingMode = MathHelper.clamp(auraTimingMode, 0, AURA_TIMINGS.length - 1);
+            auraTargetPart = MathHelper.clamp(auraTargetPart, 0, AURA_PARTS.length - 1);
+            auraTargetMode = MathHelper.clamp(auraTargetMode, 0, AURA_TARGETS.length - 1);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -1719,6 +2024,7 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("Target Animals: " + (auraTargetAnimals ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraTargetAnimals = !auraTargetAnimals; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("AutoWeapon: " + (autoWeapon ? "\u00a7aON" : "\u00a7cOFF")), b -> { autoWeapon = !autoWeapon; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Criticals: " + (criticals ? "\u00a7aON" : "\u00a7cOFF")), b -> { criticals = !criticals; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Shield Breaker: " + (shieldBreaker ? "\u00a7aON" : "\u00a7cOFF")), b -> { shieldBreaker = !shieldBreaker; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Water Crits: " + (waterCrits ? "\u00a7aON" : "\u00a7cOFF")), b -> { waterCrits = !waterCrits; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Jump & Attack: " + (auraJump ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraJump = !auraJump; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Through Walls: " + (auraThroughWalls ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraThroughWalls = !auraThroughWalls; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
@@ -1738,10 +2044,34 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("Target ESP: " + (targetEspOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { targetEspOn = !targetEspOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("NoHurtCam: " + (noHurtCamOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { noHurtCamOn = !noHurtCamOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
 
+            y = section(x, y, w, "2D ESP", espOn, b -> { espOn = !espOn; rebuild(); }, keyEsp, 28);
+            addDrawableChild(slider(x, y, w, "Range", 5f, 256f, espRange, v -> espRange = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Boxes: " + (espBoxesOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espBoxesOn = !espBoxesOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Names: " + (espNamesOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espNamesOn = !espNamesOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Health: " + (espHealthOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espHealthOn = !espHealthOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Distance: " + (espDistanceOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espDistanceOn = !espDistanceOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Fill: " + (espFillOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espFillOn = !espFillOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Tracers: " + (espTracersOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espTracersOn = !espTracersOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Players: " + (espPlayersOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espPlayersOn = !espPlayersOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Mobs: " + (espMobsOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espMobsOn = !espMobsOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Animals: " + (espAnimalsOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espAnimalsOn = !espAnimalsOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Items: " + (espItemsOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { espItemsOn = !espItemsOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
+
             y = section(x, y, w, "TriggerBot", triggerBotOn, b -> { triggerBotOn = !triggerBotOn; rebuild(); }, keyTriggerBot, 13);
             addDrawableChild(slider(x, y, w, "CPS", 1f, 50f, triggerCps, v -> triggerCps = v)); y += 22;
-            addDrawableChild(slider(x, y, w, "Range", 1f, 6f, triggerRange, v -> triggerRange = v)); y += 22;
-            addDrawableChild(ButtonWidget.builder(Text.literal("Weapon Only: " + (triggerWeaponOnly ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerWeaponOnly = !triggerWeaponOnly; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
+            addDrawableChild(slider(x, y, w, "Range", 1f, 12f, triggerRange, v -> triggerRange = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Cooldown", 0f, 1f, triggerCooldown, v -> triggerCooldown = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Jitter %", 0f, 100f, triggerJitter, v -> triggerJitter = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Scan FOV", 1f, 180f, triggerFov, v -> triggerFov = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Weapon Only: " + (triggerWeaponOnly ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerWeaponOnly = !triggerWeaponOnly; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Smart Delay: " + (triggerSmartDelay ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerSmartDelay = !triggerSmartDelay; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Wait Hurt Time: " + (triggerWaitHurtTime ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerWaitHurtTime = !triggerWaitHurtTime; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Through Walls: " + (triggerThroughWalls ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerThroughWalls = !triggerThroughWalls; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Auto Weapon: " + (triggerAutoWeapon ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerAutoWeapon = !triggerAutoWeapon; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Criticals: " + (triggerCriticals ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerCriticals = !triggerCriticals; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Target Players: " + (triggerTargetPlayers ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerTargetPlayers = !triggerTargetPlayers; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Target Mobs: " + (triggerTargetMobs ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerTargetMobs = !triggerTargetMobs; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Target Animals: " + (triggerTargetAnimals ? "\u00a7aON" : "\u00a7cOFF")), b -> { triggerTargetAnimals = !triggerTargetAnimals; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "AutoTotem", autoTotemOn, b -> { autoTotemOn = !autoTotemOn; rebuild(); }, keyAutoTotem, 16);
             addDrawableChild(slider(x, y, w, "Health", 1f, 20f, autoTotemHealth, v -> autoTotemHealth = v)); y += 22;
@@ -1887,6 +2217,7 @@ public class PypsenClient implements ClientModInitializer {
                     case 25 -> keyAirJump    = keyCode;
                     case 26 -> keyNoFall     = keyCode;
                     case 27 -> keyJesus      = keyCode;
+                    case 28 -> keyEsp        = keyCode;
                 }
                 bindingTarget = -1;
                 rebuild();
@@ -1932,6 +2263,7 @@ public class PypsenClient implements ClientModInitializer {
                     case 25 -> keyAirJump    = GLFW.GLFW_KEY_UNKNOWN;
                     case 26 -> keyNoFall     = GLFW.GLFW_KEY_UNKNOWN;
                     case 27 -> keyJesus      = GLFW.GLFW_KEY_UNKNOWN;
+                    case 28 -> keyEsp        = GLFW.GLFW_KEY_UNKNOWN;
                 }
                 bindingTarget = -1;
                 rebuild();
@@ -2000,6 +2332,7 @@ public class PypsenClient implements ClientModInitializer {
                 addB(0, "Target Animals", auraTargetAnimals, v->auraTargetAnimals=v);
                 addB(0, "AutoWeapon", autoWeapon, v->autoWeapon=v);
                 addB(0, "Criticals", criticals, v->criticals=v);
+                addB(0, "Shield Breaker", shieldBreaker, v->shieldBreaker=v);
                 addB(0, "Water Crits", waterCrits, v->waterCrits=v);
                 addB(0, "Jump & Attack", auraJump, v->auraJump=v);
                 addB(0, "Through Walls", auraThroughWalls, v->auraThroughWalls=v);
@@ -2015,8 +2348,19 @@ public class PypsenClient implements ClientModInitializer {
             });
             addMod(0, "TriggerBot", triggerBotOn, v->triggerBotOn=v, () -> {
                 addS(0, "CPS", 1f, 50f, triggerCps, v->triggerCps=v);
-                addS(0, "Range", 1f, 6f, triggerRange, v->triggerRange=v);
+                addS(0, "Range", 1f, 12f, triggerRange, v->triggerRange=v);
+                addS(0, "Cooldown", 0f, 1f, triggerCooldown, v->triggerCooldown=v);
+                addS(0, "Jitter %", 0f, 100f, triggerJitter, v->triggerJitter=v);
+                addS(0, "Scan FOV", 1f, 180f, triggerFov, v->triggerFov=v);
                 addB(0, "Weapon Only", triggerWeaponOnly, v->triggerWeaponOnly=v);
+                addB(0, "Smart Delay", triggerSmartDelay, v->triggerSmartDelay=v);
+                addB(0, "Wait Hurt Time", triggerWaitHurtTime, v->triggerWaitHurtTime=v);
+                addB(0, "Through Walls", triggerThroughWalls, v->triggerThroughWalls=v);
+                addB(0, "Auto Weapon", triggerAutoWeapon, v->triggerAutoWeapon=v);
+                addB(0, "Criticals", triggerCriticals, v->triggerCriticals=v);
+                addB(0, "Target Players", triggerTargetPlayers, v->triggerTargetPlayers=v);
+                addB(0, "Target Mobs", triggerTargetMobs, v->triggerTargetMobs=v);
+                addB(0, "Target Animals", triggerTargetAnimals, v->triggerTargetAnimals=v);
             });
             addMod(0, "AutoTotem", autoTotemOn, v->autoTotemOn=v, () -> {
                 addS(0, "Health", 1f, 20f, autoTotemHealth, v->autoTotemHealth=v);
@@ -2086,6 +2430,20 @@ public class PypsenClient implements ClientModInitializer {
             addMod(2, "Glowing ESP", visualsOn, v->visualsOn=v, () -> {
                 addC(2, "Target", VISUALS_TARGETS, visualsTargetMode, v->visualsTargetMode=v);
                 addBind(2, "Bind", 8);
+            });
+            addMod(2, "2D ESP", espOn, v->espOn=v, () -> {
+                addS(2, "Range", 5f, 256f, espRange, v->espRange=v);
+                addB(2, "Boxes", espBoxesOn, v->espBoxesOn=v);
+                addB(2, "Names", espNamesOn, v->espNamesOn=v);
+                addB(2, "Health", espHealthOn, v->espHealthOn=v);
+                addB(2, "Distance", espDistanceOn, v->espDistanceOn=v);
+                addB(2, "Fill", espFillOn, v->espFillOn=v);
+                addB(2, "Tracers", espTracersOn, v->espTracersOn=v);
+                addB(2, "Players", espPlayersOn, v->espPlayersOn=v);
+                addB(2, "Mobs", espMobsOn, v->espMobsOn=v);
+                addB(2, "Animals", espAnimalsOn, v->espAnimalsOn=v);
+                addB(2, "Items", espItemsOn, v->espItemsOn=v);
+                addBind(2, "Bind", 28);
             });
             addMod(2, "Target HUD", targetHudOn, v->targetHudOn=v, null);
             addMod(2, "Player ESP", playerEspOn, v->playerEspOn=v, null);
@@ -2173,6 +2531,7 @@ public class PypsenClient implements ClientModInitializer {
                 case 16 -> keyAutoTotem; case 17 -> keyAimLock; case 18 -> keySpider; case 19 -> keyNoWeb;
                 case 20 -> keyFreeze; case 21 -> keyCrasher; case 22 -> keyGodMode; case 23 -> keyAutoArmor;
                 case 24 -> keyFastBow; case 25 -> keyAirJump; case 26 -> keyNoFall; case 27 -> keyJesus;
+                case 28 -> keyEsp;
                 default -> GLFW.GLFW_KEY_UNKNOWN;
             };
         }
@@ -2203,6 +2562,7 @@ public class PypsenClient implements ClientModInitializer {
                         case 22 -> keyGodMode = GLFW.GLFW_KEY_UNKNOWN; case 23 -> keyAutoArmor = GLFW.GLFW_KEY_UNKNOWN;
                         case 24 -> keyFastBow = GLFW.GLFW_KEY_UNKNOWN; case 25 -> keyAirJump = GLFW.GLFW_KEY_UNKNOWN;
                         case 26 -> keyNoFall = GLFW.GLFW_KEY_UNKNOWN; case 27 -> keyJesus = GLFW.GLFW_KEY_UNKNOWN;
+                        case 28 -> keyEsp = GLFW.GLFW_KEY_UNKNOWN;
                     }
                     bindingTarget = -1;
                     rebuild();
@@ -2260,6 +2620,7 @@ public class PypsenClient implements ClientModInitializer {
                     case 22 -> keyGodMode = keyCode; case 23 -> keyAutoArmor = keyCode;
                     case 24 -> keyFastBow = keyCode; case 25 -> keyAirJump = keyCode;
                     case 26 -> keyNoFall = keyCode; case 27 -> keyJesus = keyCode;
+                    case 28 -> keyEsp = keyCode;
                 }
                 bindingTarget = -1;
                 rebuild();

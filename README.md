@@ -54,9 +54,9 @@
 
 ## Возможности
 
-- **Combat:** KillAura (режимы/ротации/таргетинг), AutoClicker, TriggerBot, AutoTotem, AutoArmor, FastBow, AimAssist/AimLock.
+- **Combat:** KillAura (режимы/ротации/таргетинг, Shield Breaker, тайминг Fall/Jump для критов), AutoClicker, TriggerBot (CPS, задержка, джиттер, фильтры целей, авто-оружие, scan FOV), AutoTotem, AutoArmor, FastBow, AimAssist/AimLock.
 - **Movement:** Speed, Fly, Spider, NoWeb, Freeze, AirJump, NoFall, Jesus, Noclip, Velocity, Strafe, Anti-Flag.
-- **Visuals:** XRay с выбором блоков, ESP, Target HUD, FullBright, NameHider и др.
+- **Visuals:** XRay с выбором блоков, 2D ESP (боксы, имена, здоровье, дистанция, трассеры, предметы, фильтры мобов/животных), Glowing ESP, Target HUD, FullBright, NameHider и др. У 2D ESP есть отдельный бинд, который назначается в GUI.
 - **Misc:** Freecam, GodMode, Panic и прочие утилиты.
 
 ## Релизы
