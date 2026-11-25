@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Generate Yarn-style mappings for Minecraft 26.3.
+"""Generate class-name-only mappings for Minecraft 26.3.
 
 26.3 ships de-obfuscated classes and Mojang no longer publishes a mappings
-file for it. This script bridges the 1.21.11 Yarn mappings to Mojang names
-through the shared 1.21.11 obfuscated names, then applies the resulting
-Yarn-style names to the 26.3 class files. The output is an identity mapping
-for anything new in 26.3, so Loom keeps those names untouched.
+file for it. This script bridges the 1.21.11 Yarn class names to the shipped
+Mojang class names through the shared 1.21.11 obfuscated names. Member names
+stay exactly as shipped by Mojang: transformFor26() already translates the
+shared Yarn source members to Mojang members, and keeping the mapping jar
+identity for members makes clean CI builds match local builds.
 """
 import collections
 import json
@@ -23,59 +24,10 @@ YARN_VERSION = "1.21.11+build.6"
 YARN_URL = f"https://maven.fabricmc.net/net/fabricmc/yarn/{YARN_VERSION}/yarn-{YARN_VERSION}.jar"
 MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 
-# A hand-curated bridge for the members used by Pypsen. 26.3 renamed many
-# members from Yarn style to Mojang style; mapping only these avoids the
-# inheritance conflicts produced by a global automatic bridge.
-MEMBER_ALIASES = {
-    # Keys are the original Mojang class/member names shipped in 26.3; values
-    # are the Yarn names used by the shared source tree.
-    "net/minecraft/client/Minecraft": {
-        "level": "world",
-        "font": "textRenderer",
-        "levelRenderer": "worldRenderer",
-        "hitResult": "crosshairTarget",
-        "getConnection": "getNetworkHandler",
-        "getUser": "getSession",
-        "setScreenAndShow": "setScreen",
-    },
-    "net/minecraft/client/gui/screens/Screen": {
-        "font": "textRenderer",
-    },
-    "com/mojang/blaze3d/platform/Window": {
-        "getGuiScaledWidth": "getScaledWidth",
-        "getGuiScaledHeight": "getScaledHeight",
-    },
-    "net/minecraft/client/network/ClientPacketListener": {
-        "getOnlinePlayers": "getPlayerList",
-        "getPlayerInfo": "getPlayerListEntry",
-    },
-    "net/minecraft/client/multiplayer/PlayerInfo": {
-        "setTabListDisplayName": "setDisplayName",
-    },
-    "net/minecraft/world/entity/Entity": {
-        "noPhysics": "noClip",
-        "tickCount": "age",
-        "getUUID": "getUuid",
-        "getYRot": "getYaw",
-        "setYRot": "setYaw",
-        "getXRot": "getPitch",
-        "setXRot": "setPitch",
-        "onGround": "isOnGround",
-        "setPos": "setPosition",
-        "getDeltaMovement": "getVelocity",
-        "setDeltaMovement": "setVelocity",
-    },
-    "net/minecraft/world/entity/LivingEntity": {
-        "getArmorValue": "getArmor",
-        "jumpFromGround": "jump",
-    },
-    "net/minecraft/world/entity/EntityDimensions": {
-        "scale": "scaled",
-    },
-    "net/minecraft/network/protocol/game/ClientboundSetEntityMotionPacket": {
-        "getId": "getEntityId",
-    },
-}
+# Member names are intentionally left untouched. A full member bridge caused
+# inheritance conflicts in TinyRemapper and, more importantly, made clean CI
+# builds use different member names than the cached local build.
+MEMBER_ALIASES = {}
 
 
 def fetch(url: str, name: str) -> Path:
