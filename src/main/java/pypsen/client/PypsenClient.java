@@ -147,6 +147,10 @@ public class PypsenClient implements ClientModInitializer {
     private static boolean xrayWasOn = false, visualsWasOn = false;
     private static LivingEntity currentTarget = null;
 
+    public static LivingEntity getAuraTarget() {
+        return currentTarget;
+    }
+
     // Smooth rotation targets
     private static float targetYaw = 0f;
     private static float targetPitch = 0f;
@@ -155,6 +159,8 @@ public class PypsenClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         loadConfig();
+        PypsenFeatures.clamp();
+        PypsenFeatures.init(MinecraftClient.getInstance());
 
         HudRenderCallback.EVENT.register((ctx, tickDelta) -> {
             MinecraftClient mc = MinecraftClient.getInstance();
@@ -194,6 +200,18 @@ public class PypsenClient implements ClientModInitializer {
                 if (autoClickerOn) lines.add("\u00a7cAutoClicker \u00a77" + String.format("%.1f", clickerCps) + (autoClickerRight ? " [RMB]" : " [LMB]"));
                 if (triggerBotOn)  lines.add("\u00a7cTriggerBot \u00a77" + String.format("%.1f", triggerCps) + " \u00a78[" + String.format("%.0f", triggerJitter) + "% jit]");
                 if (espOn)         lines.add("\u00a7b2D ESP \u00a77" + String.format("%.0fm", espRange));
+                if (PypsenFeatures.aiAuraOn) lines.add("\u00a75AI Aura \u00a77" + String.format("%.0fm", PypsenFeatures.aiRange)
+                    + " [" + PypsenFeatures.AI_PRESETS[MathHelper.clamp(PypsenFeatures.aiPreset, 0, PypsenFeatures.AI_PRESETS.length - 1)]
+                    + "/" + PypsenFeatures.AI_TARGET_MODES[MathHelper.clamp(PypsenFeatures.aiTargetMode, 0, PypsenFeatures.AI_TARGET_MODES.length - 1)]
+                    + "] \u00a78" + String.format("%.0f%%", PypsenFeatures.aiConfidence * 100f)
+                    + " \u00a77s" + PypsenFeatures.sampleCount());
+                if (PypsenFeatures.crystalAuraOn) lines.add("\u00a7cCrystal Aura \u00a77" + String.format("%.0fm", PypsenFeatures.crystalRange)
+                    + " [" + PypsenFeatures.CRYSTAL_MODES[MathHelper.clamp(PypsenFeatures.crystalMode, 0, PypsenFeatures.CRYSTAL_MODES.length - 1)]
+                    + "/" + PypsenFeatures.CRYSTAL_PLACE_MODES[MathHelper.clamp(PypsenFeatures.crystalPlaceMode, 0, PypsenFeatures.CRYSTAL_PLACE_MODES.length - 1)] + "]");
+                if (PypsenFeatures.fakeLagOn) lines.add("\u00a78FakeLag \u00a77" + String.format("%.0fms", PypsenFeatures.fakeLagDelay));
+                if (PypsenFeatures.autoEatOn) lines.add("\u00a7aAutoEat \u00a77" + String.format("%.0fHP", PypsenFeatures.autoEatHealth));
+                if (PypsenFeatures.spiderProOn) lines.add("\u00a72Spider Pro");
+                if (PypsenFeatures.noclipProOn) lines.add("\u00a78Noclip Pro");
 
                 // TPS & Ping
                 lines.add("");
@@ -237,6 +255,9 @@ public class PypsenClient implements ClientModInitializer {
 
             // ── 2D ESP OVERLAY ──
             drawEsp(ctx, mc, tickDelta);
+
+            // ── ADVANCED TARGET VISUALS ──
+            PypsenFeatures.render(ctx, mc);
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
@@ -273,6 +294,7 @@ public class PypsenClient implements ClientModInitializer {
                     strafeOn = noclipOn = antiFlagOn = autoClickerOn = triggerBotOn = freecamOn = playerEspOn = false;
                     autoTotemOn = aimLockOn = fullBrightOn = nameHiderOn = spiderOn = noWebOn = freezeOn = false;
                     jesusOn = false;
+                    PypsenFeatures.panic();
                     mc.worldRenderer.reload();
                 }
             }
@@ -343,6 +365,7 @@ public class PypsenClient implements ClientModInitializer {
                     xrayOn = !xrayOn;
                     mc.worldRenderer.reload();
                 }
+                PypsenFeatures.handleKey(handle);
             }
 
             mc.getEntityRenderDispatcher().setRenderHitboxes(hitboxOn);
@@ -1346,6 +1369,8 @@ public class PypsenClient implements ClientModInitializer {
                 if (auraSpinBot) p.setYaw(p.getYaw() + 45f);
             }
 
+            PypsenFeatures.tick(mc);
+
             if (xrayOn != xrayWasOn) {
                 mc.worldRenderer.reload();
                 xrayWasOn = xrayOn;
@@ -1673,6 +1698,8 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("autoTotemHealth=" + autoTotemHealth + "\n");
             writer.write("autoTotemMode=" + autoTotemMode + "\n");
             writer.write("aimLockOn=" + aimLockOn + "\n");
+            writer.write("aimOn=" + aimOn + "\n");
+            writer.write("aimSpeed=" + aimSpeed + "\n");
             writer.write("antiBotOn=" + antiBotOn + "\n");
             writer.write("fullBrightOn=" + fullBrightOn + "\n");
             writer.write("nameHiderOn=" + nameHiderOn + "\n");
@@ -1680,6 +1707,8 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("spiderMode=" + spiderMode + "\n");
             writer.write("noWebOn=" + noWebOn + "\n");
             writer.write("noWebMode=" + noWebMode + "\n");
+            writer.write("noclipOn=" + noclipOn + "\n");
+            writer.write("noclipBypass=" + noclipBypass + "\n");
             writer.write("freezeOn=" + freezeOn + "\n");
             writer.write("freezeMode=" + freezeMode + "\n");
             writer.write("airJumpOn=" + airJumpOn + "\n");
@@ -1701,6 +1730,10 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("playerEspOn=" + playerEspOn + "\n");
             writer.write("shieldBreaker=" + shieldBreaker + "\n");
             writer.write("keyEsp=" + keyEsp + "\n");
+            writer.write("hudOn=" + hudOn + "\n");
+            writer.write("targetHudOn=" + targetHudOn + "\n");
+            writer.write("fakeName=" + fakeName + "\n");
+            writer.write("useModernGui=" + useModernGui + "\n");
             writer.write("espOn=" + espOn + "\n");
             writer.write("espBoxesOn=" + espBoxesOn + "\n");
             writer.write("espNamesOn=" + espNamesOn + "\n");
@@ -1725,6 +1758,7 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("triggerJitter=" + triggerJitter + "\n");
             writer.write("triggerFov=" + triggerFov + "\n");
             writer.write("friends=" + String.join(",", friends) + "\n");
+            PypsenFeatures.save(writer);
             writer.close();
         } catch (Exception e) {
             e.printStackTrace();
@@ -1737,7 +1771,7 @@ public class PypsenClient implements ClientModInitializer {
             if (!file.exists()) return;
             List<String> lines = Files.readAllLines(file.toPath());
             for (String line : lines) {
-                String[] parts = line.split("=");
+                String[] parts = line.split("=", 2);
                 if (parts.length < 2) continue;
                 String key = parts[0];
                 String val = parts[1];
@@ -1776,6 +1810,8 @@ public class PypsenClient implements ClientModInitializer {
                     case "autoTotemHealth" -> autoTotemHealth = Float.parseFloat(val);
                     case "autoTotemMode" -> autoTotemMode = Integer.parseInt(val);
                     case "aimLockOn" -> aimLockOn = Boolean.parseBoolean(val);
+                    case "aimOn" -> aimOn = Boolean.parseBoolean(val);
+                    case "aimSpeed" -> aimSpeed = Float.parseFloat(val);
                     case "antiBotOn" -> antiBotOn = Boolean.parseBoolean(val);
                     case "fullBrightOn" -> fullBrightOn = Boolean.parseBoolean(val);
                     case "nameHiderOn" -> nameHiderOn = Boolean.parseBoolean(val);
@@ -1783,6 +1819,8 @@ public class PypsenClient implements ClientModInitializer {
                     case "spiderMode" -> spiderMode = Integer.parseInt(val);
                     case "noWebOn" -> noWebOn = Boolean.parseBoolean(val);
                     case "noWebMode" -> noWebMode = Integer.parseInt(val);
+                    case "noclipOn" -> noclipOn = Boolean.parseBoolean(val);
+                    case "noclipBypass" -> noclipBypass = Integer.parseInt(val);
                     case "freezeOn" -> freezeOn = Boolean.parseBoolean(val);
                     case "freezeMode" -> freezeMode = Integer.parseInt(val);
                     case "airJumpOn" -> airJumpOn = Boolean.parseBoolean(val);
@@ -1804,6 +1842,10 @@ public class PypsenClient implements ClientModInitializer {
                     case "playerEspOn" -> playerEspOn = Boolean.parseBoolean(val);
                     case "shieldBreaker" -> shieldBreaker = Boolean.parseBoolean(val);
                     case "keyEsp" -> keyEsp = Integer.parseInt(val);
+                    case "hudOn" -> hudOn = Boolean.parseBoolean(val);
+                    case "targetHudOn" -> targetHudOn = Boolean.parseBoolean(val);
+                    case "fakeName" -> fakeName = val;
+                    case "useModernGui" -> useModernGui = Boolean.parseBoolean(val);
                     case "espOn" -> espOn = Boolean.parseBoolean(val);
                     case "espBoxesOn" -> espBoxesOn = Boolean.parseBoolean(val);
                     case "espNamesOn" -> espNamesOn = Boolean.parseBoolean(val);
@@ -1831,6 +1873,7 @@ public class PypsenClient implements ClientModInitializer {
                         friends.clear();
                         if (!val.isEmpty()) friends.addAll(Arrays.asList(val.split(",")));
                     }
+                    default -> PypsenFeatures.load(key, val);
                 }
             }
 
@@ -2149,6 +2192,9 @@ public class PypsenClient implements ClientModInitializer {
 
             y = section(x, y, w, "HUD Settings", hudOn, b -> { hudOn = !hudOn; rebuild(); }, GLFW.GLFW_KEY_UNKNOWN, -1);
             addDrawableChild(ButtonWidget.builder(Text.literal("Target HUD: " + (targetHudOn ? "§aON" : "§cOFF")), b -> { targetHudOn = !targetHudOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
+            addDrawableChild(ButtonWidget.builder(Text.literal("\u00a5 Advanced Features (AI / Crystal / FakeLag / Food)"), b -> {
+                MinecraftClient.getInstance().setScreen(new PypsenFeatures.FeaturesScreen(this));
+            }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "Server Crasher", serverCrasherOn, b -> { serverCrasherOn = !serverCrasherOn; rebuild(); }, keyCrasher, 21);
             addDrawableChild(cycleBtn(x, y, w, "Mode", CRASHER_MODES, crasherMode, v -> { crasherMode = v; rebuild(); })); y += 22;
@@ -2485,6 +2531,9 @@ public class PypsenClient implements ClientModInitializer {
             });
             addDrawableChild(ButtonWidget.builder(Text.literal("Drop All Items"), b -> { dropAllItems = true; }).dimensions(cX[3], cY[3] + curY[3], 150, 20).build()); curY[3]+=22;
             addMod(3, "Panic", panicOn, v->panicOn=v, null);
+            addDrawableChild(ButtonWidget.builder(Text.literal("\u00a5 Advanced Features"), b -> {
+                MinecraftClient.getInstance().setScreen(new PypsenFeatures.FeaturesScreen(this));
+            }).dimensions(cX[3], cY[3] + curY[3], 150, 20).build()); curY[3] += 22;
         }
 
         private void addMod(int col, String name, boolean val, java.util.function.Consumer<Boolean> act, Runnable settings) {

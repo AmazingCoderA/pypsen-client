@@ -36,5 +36,12 @@ run/
 
 hs_err_*.log
 replay_*.log
+build-*.log
 *.hprof
 *.jfr
+
+# tools cache
+
+tools/cache/
+tools/__pycache__/
+*.pyc

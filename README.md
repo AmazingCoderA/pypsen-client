@@ -1,34 +1,39 @@
 # Pypsen v2
 
-Клиентский Fabric-мод для **Minecraft 1.20.1**.
+Клиентский Fabric-мод для **Minecraft 1.20.1**, **1.21.11** и **26.3**. Один исходный код, три отдельные сборки.
 
 ## Требования
 
-- Minecraft **1.20.1**
-- Fabric Loader `>= 0.14.21`
-- Fabric API `0.92.7+1.20.1`
-- Java **17+**
+| Minecraft | Fabric Loader | Fabric API | Java |
+| --- | --- | --- | --- |
+| 1.20.1 | 0.18.4 | `0.92.12+1.20.1` | 17+ |
+| 1.21.11 | 0.18.4 | `0.141.6+1.21.11` | 21+ |
+| 26.3 | 0.20.1 | `0.167.0+26.3` | 25+ |
 
 ## Сборка
 
-Для сборки нужен JDK **21+** (Fabric Loom 1.15), хотя сама модификация рассчитана на Java 17.
+Для сборки используется Gradle 9.8.0 + Fabric Loom 1.19.4, поэтому Gradle и Loom запускаются под JDK **25** для всех трёх целей. Байткод мода при этом отличается: `1.20.1` — Java 17, `1.21.11` — Java 21, `26.3` — Java 25.
 
 ```bash
-./gradlew build
+./gradlew build -PmcTarget=1.20.1
+./gradlew build -PmcTarget=1.21.11
+./gradlew build -PmcTarget=26.3
 ```
 
 На Windows:
 
 ```powershell
-.\gradlew.bat build
+.\gradlew.bat build -PmcTarget=1.20.1
+.\gradlew.bat build -PmcTarget=1.21.11
+.\gradlew.bat build -PmcTarget=26.3
 ```
 
-Готовый мод появляется в `build/libs/pypsen-2.0.0.jar`. Исходники — `pypsen-2.0.0-sources.jar`.
+Готовые JAR-файлы появляются в `build/libs/`. Каждая цель имеет отдельное имя, поэтому сборки не перезаписывают друг друга.
 
 ## Установка
 
-1. Установите Fabric Loader для Minecraft 1.20.1.
-2. Положите Fabric API и `pypsen-2.0.0.jar` в папку `mods`.
+1. Установите Fabric Loader нужной версии Minecraft.
+2. Положите Fabric API и подходящий JAR Pypsen в папку `mods`.
 3. Запустите клиент.
 
 ## Управление
@@ -42,26 +47,26 @@
 | `X` | XRay |
 | `H` | Hitbox |
 
-Остальные бинды назначаются прямо в GUI (кнопка `Key` → нажмите клавишу; middle click сбрасывает бинд).
-Средняя кнопка мыши по игроку добавляет/убирает его из списка друзей.
+Остальные бинды назначаются прямо в GUI (кнопка `Key` → нажмите клавишу; middle click сбрасывает бинд). Средняя кнопка мыши по игроку добавляет/убирает его из списка друзей.
 
-В меню есть классический и современный GUI, пресеты, настройки режимов и кнопка сохранения конфига.
+В меню есть классический и современный GUI, пресеты и кнопка сохранения конфига. Кнопка **Advanced Features** открывает отдельный экран из 6 страниц: AI KillAura и обучение модели, Crystal Aura и размещение кристаллов, FakeLag/AutoEat/Spider/Noclip, визуальные настройки. Все прежние опции сохранены, добавлены новые режимы и переменные параметры.
 
 ## Конфиг
 
-Файл `run/pypsen_config.txt` создаётся/обновляется кнопкой **Save Config** в меню.
-Там же хранятся друзья и выбранные блоки XRay.
+Файл `run/pypsen_config.txt` создаётся/обновляется кнопкой **Save Config** в меню. Там же хранятся друзья, выбранные блоки XRay и все новые настройки продвинутого экрана. AI KillAura дополнительно сохраняет обучающую выборку в `pypsen_ai.txt` (имя файла настраивается); можно вручную переобучить модель на `100`, `500` или `2000` выборок, включить автообучение и автосохранение. Старые файлы выборки из 6 колонок загружаются автоматически.
 
 ## Возможности
 
-- **Combat:** KillAura (режимы/ротации/таргетинг, Shield Breaker, тайминг Fall/Jump для критов), AutoClicker, TriggerBot (CPS, задержка, джиттер, фильтры целей, авто-оружие, scan FOV), AutoTotem, AutoArmor, FastBow, AimAssist/AimLock.
-- **Movement:** Speed, Fly, Spider, NoWeb, Freeze, AirJump, NoFall, Jesus, Noclip, Velocity, Strafe, Anti-Flag.
-- **Visuals:** XRay с выбором блоков, 2D ESP (боксы, имена, здоровье, дистанция, трассеры, предметы, фильтры мобов/животных), Glowing ESP, Target HUD, FullBright, NameHider и др. У 2D ESP есть отдельный бинд, который назначается в GUI.
-- **Misc:** Freecam, GodMode, Panic и прочие утилиты.
+- **Combat:** KillAura (режимы/ротации/таргетинг, Shield Breaker, тайминг Fall/Jump для критов), AI KillAura (пресеты `Balanced`/`Aggressive`/`Legit`/`HvH`/`Smart`, 5 режимов выбора цели, 4 режима ротации, логистическая модель с 8 признаками, позитивные/негативные примеры, автообучение и файл выборки `100-2000`), Crystal Aura (7 режимов: `Attack + Place`, `Attack Only`, `Smart Danger`, `AntiTotem Rush`, `FacePlace`, `Crystal Storm`, `Safe Hybrid`; 5 режимов цели, 4 позиции размещения, проверка урона себе, предсказание движения, лимит кристаллов, оффхенд), AutoClicker, TriggerBot (CPS, задержка, джиттер, фильтры целей, авто-оружие, scan FOV), AutoTotem, AutoEat (яблоки/еда по HP и голоду), AutoArmor, FastBow, AimAssist/AimLock.
+- **Movement:** Speed, Fly, Spider + Spider Pro (`Wall Climb`, `AntiStuck`, `Phase Jump`, `Turbo`), NoWeb, Freeze, AirJump, NoFall, Jesus, Noclip + Noclip Pro (`Phantom`, `Phase Step`, `Compact`, `Ghost`), Velocity, Strafe, Anti-Flag, FakeLag (`Motion`, `All C2S`, `Burst`).
+- **Visuals:** XRay с выбором блоков, 2D ESP (боксы, имена, здоровье, дистанция, трассеры, предметы, фильтры мобов/животных), Glowing ESP, Target HUD с 5 стилями и радужным режимом, детализация тегов (FRIEND/ENEMY, щит, броня), FullBright, NameHider и др.
+- **Misc:** Freecam, GodMode, Panic и прочие утилиты. Panic теперь отключает и все новые модули.
 
 ## Релизы
 
-При push тега вида `v*` GitHub Actions автоматически собирает мод и прикрепляет JAR-файлы к релизу.
+При push тега вида `v*` GitHub Actions собирает **три версии** и прикрепляет все JAR-файлы к релизу. Артефакты каждой версии также доступны в artifacts соответствующего таска.
+
+Сборки проверены компиляцией, метаданными и ремапом миксинов; поведение в игре не проверено.
 
 ## Лицензия
 

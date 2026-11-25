@@ -2,52 +2,435 @@ plugins {
 	id 'fabric-loom' version "${loom_version}"
 }
 
-version = project.mod_version
+version = "${project.mod_version}+${project.mcTarget}"
 group = project.maven_group
 
 base {
-	archivesName = project.archives_base_name
+	archivesName = "${project.archives_base_name}-${project.mcTarget}"
 }
 
+// One source tree, three Minecraft generations. For newer versions the build
+// generates a transformed copy of the sources and adds a small compatibility
+// layer, so the original 1.20.1 code is never damaged.
+def targets = [
+	'1.20.1' : [
+		mc: '1.20.1',
+		mappings: 'net.fabricmc:yarn:1.20.1+build.10:v2',
+		loader: '0.18.4',
+		fabricApi: '0.92.12+1.20.1',
+		range: '~1.20.1',
+		java: 17,
+		modern: false
+	],
+	'1.21.11': [
+		mc: '1.21.11',
+		mappings: 'net.fabricmc:yarn:1.21.11+build.6:v2',
+		loader: '0.18.4',
+		fabricApi: '0.141.6+1.21.11',
+		range: '~1.21.11',
+		java: 21,
+		modern: true
+	],
+	'26.3'   : [
+		mc: '26.3',
+		mappings: 'unmapped',
+		loader: '0.20.1',
+		fabricApi: '0.167.0+26.3',
+		range: '~26.3',
+		java: 25,
+		modern: true
+	]
+]
+def target = targets[project.mcTarget]
+if (target == null) throw new GradleException("Unknown mcTarget '${project.mcTarget}'. Use one of ${targets.keySet()}")
+
+def javaLevel = target.java as int
+def generatedDir = layout.buildDirectory.dir("generated/sources/pypsen/${project.mcTarget}/java").get().asFile
+def versionDir = file("src/versions/${project.mcTarget}/java")
+
+static String insertArg(String text, String marker, String arg) {
+	int from = 0
+	while (true) {
+		int start = text.indexOf(marker, from)
+		if (start < 0) return text
+		int open = start + marker.length() - 1
+		int depth = 0
+		int end = -1
+		for (int i = open; i < text.length(); i++) {
+			char c = text.charAt(i)
+			if (c == '(') depth++
+			else if (c == ')') {
+				depth--
+				if (depth == 0) { end = i; break }
+			}
+		}
+		if (end < 0) return text
+		text = text.substring(0, end) + ', ' + arg + text.substring(end)
+		from = end + arg.length() + 2
+	}
+}
+
+static String transformForModern(String src) {
+	String s = src
+
+	// Rendering callback signature changed from float to RenderTickCounter.
+	s = s.replace('HudRenderCallback.EVENT.register((ctx, tickDelta) -> {',
+		'HudRenderCallback.EVENT.register((ctx, tickCounter) -> {\n        float tickDelta = tickCounter.getTickProgress(true);')
+
+	// Screen/input API changes.
+	s = s.replaceAll('renderBackground\\(ctx\\);', 'renderBackground(ctx, mx, my, d);')
+	s = s.replaceAll('public boolean mouseClicked\\(double mx, double my, int button\\) \\{',
+		'public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean doubled) {\n            double mx = click.x(); double my = click.y(); int button = click.button();')
+	s = s.replaceAll('super\\.mouseClicked\\(mx, my, button\\)', 'super.mouseClicked(click, doubled)')
+	s = s.replaceAll('public boolean mouseReleased\\(double mx, double my, int button\\) \\{',
+		'public boolean mouseReleased(net.minecraft.client.gui.Click click) {\n            double mx = click.x(); double my = click.y(); int button = click.button();')
+	s = s.replaceAll('super\\.mouseReleased\\(mx, my, button\\)', 'super.mouseReleased(click)')
+	s = s.replaceAll('public boolean mouseDragged\\(double mx, double my, int button, double dx, double dy\\) \\{',
+		'public boolean mouseDragged(net.minecraft.client.gui.Click click, double dx, double dy) {\n            double mx = click.x(); double my = click.y(); int button = click.button();')
+	s = s.replaceAll('super\\.mouseDragged\\(mx, my, button, dx, dy\\)', 'super.mouseDragged(click, dx, dy)')
+	s = s.replaceAll('public boolean mouseScrolled\\(double mx, double my, double amount\\) \\{',
+		'public boolean mouseScrolled(double mx, double my, double dx, double amount) {')
+	s = s.replaceAll('public boolean mouseScrolled\\(double mouseX, double mouseY, double amount\\) \\{',
+		'public boolean mouseScrolled(double mouseX, double mouseY, double dx, double amount) {')
+	s = s.replaceAll('public boolean keyPressed\\(int keyCode, int scanCode, int modifiers\\) \\{',
+		'public boolean keyPressed(net.minecraft.client.input.KeyInput input) {\n            int keyCode = input.key(); int scanCode = input.scancode(); int modifiers = input.modifiers();')
+	s = s.replaceAll('super\\.keyPressed\\(keyCode, scanCode, modifiers\\)', 'super.keyPressed(input)')
+
+	// Entity/camera positions and interpolation fields.
+	s = s.replace('MinecraftClient.getInstance().player.getPos()', 'Compat.entityPos(MinecraftClient.getInstance().player)')
+	s = s.replace('client.player.getPos()', 'Compat.entityPos(client.player)')
+	s = s.replace('camera.getPos()', 'Compat.cameraPos(camera)')
+	s = s.replaceAll('\\bp\\.getPos\\(\\)', 'Compat.entityPos(p)')
+	s = s.replaceAll('\\.prevX', '.lastX').replaceAll('\\.prevY', '.lastY').replaceAll('\\.prevZ', '.lastZ')
+
+	// Inventory/equipment API changes.
+	s = s.replaceAll('(\\.getInventory\\(\\))\\.selectedSlot = ([^;]+);', '$1.setSelectedSlot($2);')
+	s = s.replaceAll('(\\.getInventory\\(\\))\\.selectedSlot', '$1.getSelectedSlot()')
+	s = s.replaceAll('p\\.getInventory\\(\\)\\.getArmorStack\\(type\\)', 'Compat.armorStack(p, type)')
+	s = s.replaceAll('p\\.resetLastAttackedTicks\\(\\)', 'p.resetTicksSinceLastAttack()')
+	s = s.replaceAll('p\\.input\\.movementForward', 'Compat.moveForward(p)')
+	s = s.replaceAll('p\\.input\\.movementSideways', 'Compat.moveSideways(p)')
+
+	// Packet constructor changes.
+	s = insertArg(s, 'new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(', 'false')
+	s = insertArg(s, 'new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.LookAndOnGround(', 'false')
+	s = s.replace('new net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0)',
+		'new net.minecraft.network.packet.c2s.play.PlayerInteractItemC2SPacket(Hand.MAIN_HAND, 0, p.getYaw(), p.getPitch())')
+	s = s.replace('net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode.PRESS_SHIFT_KEY',
+		'net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode.START_SPRINTING')
+	s = s.replace('net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode.RELEASE_SHIFT_KEY',
+		'net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket.Mode.STOP_SPRINTING')
+	s = s.replace('mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.CustomPayloadC2SPacket(new net.minecraft.util.Identifier("minecraft:brand"), buf));',
+		'// Brand payload packet layout is version-specific; skipped on this target.')
+	s = s.replace('mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.ClientSettingsC2SPacket("A".repeat(32000), mc.options.getViewDistance().getValue(), net.minecraft.client.option.ChatVisibility.FULL, true, 0, net.minecraft.util.Arm.LEFT, true, true));',
+		'// Client settings packet layout is version-specific; skipped on this target.')
+
+	// Items/enchantments/armor moved to components and tags.
+	s = s.replaceAll('import net\\.minecraft\\.item\\.AxeItem;\\r?\\n', '')
+	s = s.replaceAll('import net\\.minecraft\\.item\\.SwordItem;\\r?\\n', '')
+	s = s.replaceAll('stack\\.getItem\\(\\) instanceof net\\.minecraft\\.item\\.ArmorItem armorItem', 'Compat.isArmor(stack)')
+	s = s.replaceAll('armorItem\\.getSlotType\\(\\)\\.getEntitySlotId\\(\\) == type', 'Compat.armorSlot(stack) == type')
+	s = s.replaceAll('stack\\.getItem\\(\\) instanceof SwordItem sword', 'Compat.isSword(stack)')
+	s = s.replaceAll('stack\\.getItem\\(\\) instanceof AxeItem axe', 'Compat.isAxe(stack)')
+	s = s.replaceAll('stack\\.getItem\\(\\) instanceof AxeItem\\)', 'Compat.isAxe(stack))')
+	s = s.replaceAll('p\\.getMainHandStack\\(\\)\\.getItem\\(\\) instanceof AxeItem', 'Compat.isAxe(p.getMainHandStack())')
+	s = s.replaceAll('p\\.getMainHandStack\\(\\)\\.getItem\\(\\) instanceof SwordItem', 'Compat.isSword(p.getMainHandStack())')
+	s = s.replaceAll('damage = sword\\.getAttackDamage\\(\\);', 'damage = Compat.weaponDamage(stack);')
+	s = s.replaceAll('damage = axe\\.getAttackDamage\\(\\);', 'damage = Compat.weaponDamage(stack);')
+	s = s.replaceAll('(?s)getArmorScore\\(net\\.minecraft\\.item\\.ItemStack stack\\) \\{.*?return -1;\\s*\\}',
+		'getArmorScore(net.minecraft.item.ItemStack stack) { return Compat.getArmorScore(stack); }')
+	s = s.replaceAll('(?s)findBestWeapon\\(net\\.minecraft\\.client\\.network\\.ClientPlayerEntity p, boolean preferAxe\\) \\{.*?return bestSlot;\\s*\\}',
+		'findBestWeapon(net.minecraft.client.network.ClientPlayerEntity p, boolean preferAxe) { return Compat.findBestWeapon(p, preferAxe); }')
+	s = s.replaceAll('boolean isWeapon = p\\.getMainHandStack\\(\\)\\.getItem\\(\\) instanceof SwordItem \\|\\| p\\.getMainHandStack\\(\\)\\.getItem\\(\\) instanceof AxeItem;',
+		'boolean isWeapon = Compat.isSword(p.getMainHandStack()) || Compat.isAxe(p.getMainHandStack());')
+
+	// Particles, vectors, profiles and miscellaneous small API changes.
+	s = s.replaceAll('mc\\.world\\.addParticle\\(', 'Compat.addParticle(mc.world, ')
+	s = s.replaceAll('org\\.joml\\.Vector3f', 'org.joml.Vector3fc')
+	s = s.replaceAll('\\b(right|up|forward)\\.([xyz])\\b', '$1.$2()')
+	s = s.replace('p.setPosition(p.getX() + forward.x(), p.getY(), p.getZ() + forward.z());',
+		'p.setPosition(p.getX() + forward.x, p.getY(), p.getZ() + forward.z);')
+	s = s.replaceAll('entry\\.getProfile\\(\\)\\.getId\\(\\)', 'entry.getProfile().id()')
+	s = s.replaceAll('packet\\.getId\\(\\)', 'packet.getEntityId()')
+	s = s.replaceAll('mc\\.getEntityRenderDispatcher\\(\\)\\.setRenderHitboxes\\(hitboxOn\\);',
+		'// hitbox rendering toggle is not exposed by this Minecraft version')
+
+	return s
+}
+
+// 26.3 is a much larger API rewrite than 1.21.11: GLFW was replaced by SDL,
+// DrawContext by GuiGraphicsExtractor and HudRenderCallback by HudElementRegistry.
+// The compatibility classes live in src/versions/26.3/java; here we only rewrite
+// the source tokens that refer to those APIs.
+static String transformFor26(String src) {
+	String s = transformForModern(src)
+
+	s = s.replaceAll('import org\\.lwjgl\\.glfw\\.GLFW;\\r?\\n', '')
+	s = s.replace('GLFW.', 'GlfwCompat.')
+	s = s.replace('import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;',
+		'import pypsen.client.HudCompat26;')
+	s = s.replace('import net.minecraft.client.gui.DrawContext;',
+		'import net.minecraft.client.gui.GuiGraphicsExtractor;\nimport pypsen.client.DrawContext26;')
+	s = s.replace('HudRenderCallback.EVENT.register(', 'HudCompat26.register(')
+	s = s.replace('tickCounter.getTickProgress(true)', 'tickCounter.getGameTimeDeltaPartialTick(true)')
+
+	// Mojang renamed several mixin targets in 26.3. Rewrite the injection
+	// descriptors here so remapJar can find them and the hooks still apply.
+	if (src.contains('class BlockMixin')) {
+		s = s.replace('method = "shouldDrawSide"', 'method = "shouldRenderFace"')
+		s = s.replaceAll('(?s)private static void pypsen\\$xray\\(BlockState state, BlockView world,\\s*BlockPos pos, Direction side,\\s*BlockPos otherPos,\\s*CallbackInfoReturnable<Boolean> cir\\) \\{',
+			'private static void pypsenXray(BlockState state, BlockState otherState, Direction side, CallbackInfoReturnable<Boolean> cir) {')
+	}
+	if (src.contains('class ChatHudMixin')) {
+		s = s.replace('addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/gui/hud/MessageIndicator;)V',
+			'addMessage(Lnet/minecraft/text/Text;Lnet/minecraft/network/message/MessageSignatureData;Lnet/minecraft/client/multiplayer/chat/GuiMessageSource;Lnet/minecraft/client/multiplayer/chat/GuiMessageTag;)V')
+	}
+	if (src.contains('class ClientPlayerEntityMixin')) {
+		s = s.replace('method = "pushOutOfBlocks"', 'method = "moveTowardsClosestSpace"')
+	}
+	if (src.contains('class GameRendererMixin')) {
+		s = s.replace('method = "tiltViewWhenHurt"', 'method = "bobHurt"')
+		s = s.replace('private void onTiltViewWhenHurt(MatrixStack matrices, float tickDelta, CallbackInfo ci) {',
+			'private void onTiltViewWhenHurt(net.minecraft.client.renderer.state.level.CameraRenderState state, MatrixStack matrices, CallbackInfo ci) {')
+	}
+	if (src.contains('class NetworkMixin')) {
+		s = s.replace('method = "onEntityVelocityUpdate"', 'method = "handleSetEntityMotion"')
+		s = s.replace('method = "onExplosion"', 'method = "handleExplosion"')
+	}
+	if (src.contains('class EntityMixin')) {
+		s = s.replace('method = "getTargetingMargin"', 'method = "getPickRadius"')
+		s = s.replace('method = "pushAwayFrom"', 'method = "push"')
+		s = s.replace('method = "slowMovement"', 'method = "makeStuckInBlock"')
+	}
+	if (src.contains('class EntityRendererMixin')) {
+		s = s.replaceAll('import org\\.spongepowered\\.asm\\.mixin\\.injection\\.ModifyVariable;\\r?\\n', '')
+		s = s.replace('method = "hasLabel"', 'method = "getNameTag"')
+		s = s.replace('CallbackInfoReturnable<Boolean> cir)', 'CallbackInfoReturnable<Text> cir)')
+		s = s.replace('cir.setReturnValue(true);', 'cir.setReturnValue(Text.literal(""));')
+		s = s.replaceAll('(?s)    @ModifyVariable\\(method = "renderLabelIfPresent".*?\\r?\\n    \\}\\r?\\n',
+			'    @Inject(method = "getNameTag", at = @At("RETURN"), cancellable = true)\n' +
+			'    private void modifyLabel(T entity, CallbackInfoReturnable<Text> cir) {\n' +
+			'        Text text = cir.getReturnValue();\n' +
+			'        if (PypsenClient.nameHiderOn && text != null && MinecraftClient.getInstance().getUser() != null) {\n' +
+			'            String myName = MinecraftClient.getInstance().getUser().getName();\n' +
+			'            String str = text.getString();\n' +
+			'            if (str.contains(myName)) {\n' +
+			'                cir.setReturnValue(Text.literal(str.replace(myName, PypsenClient.fakeName)));\n' +
+			'                return;\n' +
+			'            }\n' +
+			'        }\n' +
+			'        if (PypsenClient.playerEspOn && entity instanceof PlayerEntity && text == null) {\n' +
+			'            cir.setReturnValue(Text.literal(""));\n' +
+			'        }\n' +
+			'    }\n')
+	}
+
+	// Screens now extract render state instead of receiving a DrawContext.
+	s = s.replaceAll('public void render\\(DrawContext ctx, int mx, int my, float d\\) \\{',
+		'public void extractRenderState(GuiGraphicsExtractor rawCtx, int mx, int my, float d) {\n            DrawContext26 ctx = new DrawContext26(rawCtx);')
+	s = s.replaceAll('super\\.render\\((\\w+), (\\w+), (\\w+), (\\w+)\\);', 'super.extractRenderState(rawCtx, $2, $3, $4);')
+	s = s.replaceAll('\\s*renderBackground\\(ctx(?:, mx, my, d)?\\);', '')
+	s = s.replaceAll('\\bDrawContext\\b', 'DrawContext26')
+	s = s.replaceAll('@Override public boolean shouldPause\\(\\)', '@Override public boolean isPauseScreen()')
+	s = s.replaceAll('public void close\\(\\) \\{', 'public void onClose() {')
+	s = s.replaceAll('input\\.scancode\\(\\)', '0')
+
+	// APIs removed in 26.3 and replaced by small compatibility helpers.
+	s = s.replace('mc.getWindow().getHandle()', 'Compat26.windowHandle(mc.getWindow())')
+	s = s.replace('mc.currentScreen', 'Compat26.currentScreen(mc)')
+	s = s.replace('net.minecraft.util.math.BlockPos.ORIGIN', 'net.minecraft.util.math.BlockPos.ZERO')
+	s = s.replaceAll('\\.sendMessage\\((Text\\.literal\\([^;]*?\\)), true\\)', '.sendSystemMessage($1)')
+
+	// The 26.3 development jar keeps Mojang member names, so Yarn-named
+	// members have to be translated in source. Class names are already bridged
+	// by the generated mappings jar.
+	def yarnToMojang = [
+		'getNetworkHandler' : 'getConnection',
+		'getSession'        : 'getUser',
+		'getUsername'       : 'getName',
+		'getPlayerListEntry': 'getPlayerInfo',
+		'getPlayerList'     : 'getOnlinePlayers',
+		'setScreen'         : 'setScreenAndShow',
+		'getArmor'          : 'getArmorValue',
+		'getUuid'           : 'getUUID',
+		'getYaw'            : 'getYRot',
+		'setYaw'            : 'setYRot',
+		'getPitch'          : 'getXRot',
+		'setPitch'          : 'setXRot',
+		'getVelocity'       : 'getDeltaMovement',
+		'setVelocity'       : 'setDeltaMovement',
+		'isOnGround'        : 'onGround',
+		'isTouchingWater'   : 'isInWater',
+		'jump'              : 'jumpFromGround',
+		'scaled'            : 'scale',
+		'setDisplayName'    : 'setTabListDisplayName',
+		'setPosition'       : 'setPos',
+		'getStack'          : 'getItem',
+		'getScaledWidth'    : 'getGuiScaledWidth',
+		'getScaledHeight'   : 'getGuiScaledHeight',
+		'worldRenderer'     : 'levelRenderer',
+		'crosshairTarget'   : 'hitResult',
+		'interactionManager': 'gameMode',
+		'jumpKey'           : 'keyJump',
+		'textRenderer'      : 'font',
+		'noClip'            : 'noPhysics'
+	]
+	yarnToMojang.each { from, to ->
+		s = s.replaceAll('\\.' + from + '\\b', '.' + to)
+	}
+	// Screen subclasses reference the text renderer as a bare field.
+	s = s.replaceAll('(?<![.\\w])textRenderer\\b', 'font')
+	s = s.replaceAll('\\.age\\b', '.tickCount')
+
+	// Only the mc.world field was renamed; fully qualified net.minecraft.world.*
+	// imports must stay intact because the 26.3 dev jar keeps class names.
+	s = s.replace('mc.world', 'mc.level')
+	s = s.replace('net.minecraft.client.level.', 'net.minecraft.client.world.')
+	s = s.replace('net.minecraft.level.', 'net.minecraft.world.')
+
+	// Remaining member renames in 26.3. These are applied after the generic map
+	// so version-specific packet helpers win over the 1.21.11 rewrites.
+	s = s.replaceAll('\\.sendPacket\\(', '.send(')
+	s = s.replaceAll('mc\\.gameMode\\.attackEntity\\(', 'mc.gameMode.attack(')
+	s = s.replaceAll('mc\\.gameMode\\.interactItem\\(', 'mc.gameMode.useItem(')
+	s = s.replaceAll('mc\\.gameMode\\.interactBlock\\(', 'mc.gameMode.useItemOn(')
+	s = s.replaceAll('mc\\.gameMode\\.clickSlot\\(', 'Compat26.clickSlot(mc.gameMode, ')
+	s = s.replaceAll('\\.levelRenderer\\.reload\\(\\)', '.levelRenderer.resetLevelRenderData()')
+	s = s.replaceAll('mc\\.options\\.sneakKey\\b', 'mc.options.keyShift')
+	s = s.replaceAll('mc\\.options\\.useKey\\b', 'mc.options.keyUse')
+	s = s.replaceAll('mc\\.options\\.attackKey\\b', 'mc.options.keyAttack')
+	s = s.replaceAll('\\.isPressed\\(\\)', '.isDown()')
+	s = s.replaceAll('\\.getMainHandStack\\(\\)', '.getMainHandItem()')
+	s = s.replaceAll('\\.getOffHandStack\\(\\)', '.getOffhandItem()')
+	s = s.replaceAll('\\.getRotationVec\\(', '.getViewVector(')
+	s = s.replaceAll('\\.getAttackCooldownProgress\\(', '.getAttackStrengthScale(')
+	s = s.replaceAll('\\.resetTicksSinceLastAttack\\(\\)', '.resetAttackStrengthTicker()')
+	s = s.replaceAll('\\.addVelocity\\(', '.push(')
+	s = s.replaceAll('\\.addStatusEffect\\(', '.addEffect(')
+	s = s.replaceAll('\\.hasStatusEffect\\(', '.hasEffect(')
+	s = s.replaceAll('\\.removeStatusEffect\\(', '.removeEffect(')
+	s = s.replaceAll('\\.setFireTicks\\(0\\)', '.extinguishFire()')
+	s = s.replaceAll('p\\.getBlockPos\\(\\)', 'p.blockPosition()')
+	s = s.replaceAll('\\.blockPosition\\(\\)\\.add\\(', '.blockPosition().offset(')
+	s = s.replaceAll('p\\.playerScreenHandler', 'p.inventoryMenu')
+	s = s.replaceAll('\\.syncId\\b', '.containerId')
+	s = s.replaceAll('\\.getHungerManager\\(\\)', '.getFoodData()')
+	s = s.replaceAll('Registries\\.ITEM\\.getId\\(', 'Registries.ITEM.getKey(')
+	s = s.replaceAll('\\.multiply\\(noclipStep\\)', '.scale(noclipStep)')
+	s = s.replaceAll('mc\\.getConnection\\(\\)\\.send\\(new net\\.minecraft\\.network\\.packet\\.c2s\\.play\\.HandSwingC2SPacket\\(Hand\\.MAIN_HAND\\)\\)', 'Compat26.swing(mc.player)')
+	s = s.replaceAll('p\\.swingHand\\(Hand\\.MAIN_HAND\\)', 'Compat26.swing(p)')
+	s = s.replaceAll('p\\.swingHand\\(Hand\\.OFF_HAND\\)', 'Compat26.swing(p)')
+	s = s.replaceAll('\\.getBlockPos\\(\\)\\.add\\(', '.blockPosition().offset(')
+	s = s.replaceAll('BlockHitResult\\) mc\\.hitResult\\)\\.blockPosition\\(\\)', 'BlockHitResult) mc.hitResult).getBlockPos()')
+	s = s.replaceAll('\\.getWidth\\(\\)', '.getBbWidth()')
+	s = s.replaceAll('\\.getHeight\\(\\)', '.getBbHeight()')
+	s = s.replaceAll('\\.setGlowing\\(', '.setGlowingTag(')
+	s = s.replaceAll('\\.canSee\\(', '.hasLineOfSight(')
+	s = s.replaceAll('\\.getCameraPosVec\\(', '.getEyePosition(')
+	s = s.replaceAll('\\.multiply\\(0\\.5\\)', '.scale(0.5)')
+	s = s.replaceAll('\\.lastX\\b', '.xOld').replaceAll('\\.lastY\\b', '.yOld').replaceAll('\\.lastZ\\b', '.zOld')
+	s = s.replaceAll('\\.runDirectory\\b', '.gameDirectory')
+	s = s.replaceAll('mc\\.level\\.getEntities\\(\\)', 'mc.level.entitiesForRendering()')
+	s = s.replaceAll('mc\\.level\\.getOtherEntities\\(', 'mc.level.getEntities(')
+	s = s.replaceAll('\\.getBoundingBox\\(\\)\\.expand\\(', '.getBoundingBox().inflate(')
+	s = s.replaceAll('e -> e\\.distanceTo\\(p\\)', 'e -> ((net.minecraft.entity.Entity) e).distanceTo(p)')
+	s = s.replaceAll('\\.writeString\\(', '.writeUtf(')
+	s = s.replace('net.minecraft.screen.slot.SlotActionType.PICKUP', '0')
+	s = s.replace('net.minecraft.screen.slot.SlotActionType.QUICK_MOVE', '1')
+	s = s.replace('net.minecraft.screen.slot.SlotActionType.THROW', '2')
+	s = s.replaceAll('packet\\.getEntityId\\(\\)', 'packet.id()')
+
+	// Screen/widget API rewrites.
+	s = s.replaceAll('\\.dimensions\\(', '.bounds(')
+	s = s.replaceAll('\\baddDrawableChild\\(', 'GuiCompat26.add(this, ')
+	s = s.replaceAll('\\bclearChildren\\(\\)', 'GuiCompat26.clear(this)')
+	s = s.replaceAll('\\.setChangedListener\\(', '.setResponder(')
+	s = s.replaceAll('\\bmc\\.gameRenderer\\.getCamera\\(\\)', 'mc.gameRenderer.mainCamera()')
+	s = s.replaceAll('\\.isReady\\(\\)', '.isInitialized()')
+	s = s.replaceAll('camera\\.getDiagonalPlane\\(\\)', 'Compat26.cameraRight(camera)')
+	s = s.replaceAll('camera\\.getVerticalPlane\\(\\)', 'camera.upVector()')
+	s = s.replaceAll('camera\\.getHorizontalPlane\\(\\)', 'camera.forwardVector()')
+	s = s.replaceAll('options\\.getMouseSensitivity\\(\\)', 'options.sensitivity()')
+	s = s.replaceAll('options\\.sensitivity\\(\\)\\.getValue\\(\\)', 'options.sensitivity().get()')
+	s = s.replaceAll('options\\.getFov\\(\\)\\.getValue\\(\\)\\.floatValue\\(\\)', 'camera.getFov()')
+	s = s.replaceAll('\\bmc\\.camera\\b', 'mc.gameRenderer.mainCamera()')
+	s = s.replaceAll('stack\\.getName\\(\\)', 'stack.getHoverName()')
+	s = s.replaceAll('mc\\.level\\.raycast\\(new RaycastContext\\([^;]*?\\)\\)', 'mc.hitResult')
+
+	// Screen.local "client" field no longer exists in 26.3. The slash guard keeps
+	// descriptor fragments such as net/minecraft/client/... intact.
+	s = s.replaceAll('(?<![.\\w/])client\\b', 'MinecraftClient.getInstance()')
+
+	return s
+}
+
+tasks.register('generateVersionSources') {
+	inputs.dir('src/main/java').withPropertyName('source')
+	inputs.property('mcTarget', project.mcTarget)
+	inputs.property('modern', target.modern)
+	outputs.dir(generatedDir)
+
+	doLast {
+		generatedDir.mkdirs()
+		file('src/main/java').eachFileRecurse { f ->
+			if (!f.name.endsWith('.java')) return
+			def rel = file('src/main/java').toPath().relativize(f.toPath()).toString()
+			def out = new File(generatedDir, rel)
+			out.parentFile.mkdirs()
+			def text = f.getText('UTF-8')
+			String transformed = text
+			if (project.mcTarget == '26.3') transformed = transformFor26(text)
+			else if (target.modern) transformed = transformForModern(text)
+			out.setText(transformed, 'UTF-8')
+		}
+	}
+}
+
+sourceSets.main.java.setSrcDirs([generatedDir])
+if (versionDir.exists()) sourceSets.main.java.srcDir versionDir
+
+tasks.named('compileJava') { dependsOn 'generateVersionSources' }
+tasks.matching { it.name == 'sourcesJar' }.configureEach { dependsOn 'generateVersionSources' }
+
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
 }
 
 dependencies {
-	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-
+	minecraft "com.mojang:minecraft:${target.mc}"
+	if (target.mappings == 'official') {
+		mappings loom.officialMojangMappings()
+	} else if (target.mappings == 'unmapped') {
+		// 26.3 ships de-obfuscated classes and Mojang no longer publishes mappings
+		// for it. An identity mapping lets Loom keep the shipped names stable.
+		mappings files(file("mappings/${project.mcTarget}-mappings.jar"))
+	} else {
+		mappings target.mappings
+	}
+	modImplementation "net.fabricmc:fabric-loader:${target.loader}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${target.fabricApi}"
 }
 
 processResources {
 	inputs.property "version", project.version
+	inputs.property "mcRange", target.range
+	inputs.property "javaLevel", javaLevel
 
 	filesMatching("fabric.mod.json") {
-		expand "version": inputs.properties.version
+		expand "version": inputs.properties.version,
+		       "mcRange": inputs.properties.mcRange,
+		       "javaLevel": inputs.properties.javaLevel
 	}
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 17
+	it.options.release = javaLevel
+	it.options.encoding = 'UTF-8'
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
 	withSourcesJar()
-
-	sourceCompatibility = JavaVersion.VERSION_17
-	targetCompatibility = JavaVersion.VERSION_17
+	sourceCompatibility = JavaVersion.toVersion(javaLevel)
+	targetCompatibility = JavaVersion.toVersion(javaLevel)
 }
 
 jar {
@@ -57,4 +440,3 @@ jar {
 		rename { "${it}_${inputs.properties.archivesName}"}
 	}
 }
-
