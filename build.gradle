@@ -148,6 +148,7 @@ static String transformForModern(String src) {
 	s = s.replaceAll('mc\\.world\\.addParticle\\(', 'Compat.addParticle(mc.world, ')
 	s = s.replaceAll('org\\.joml\\.Vector3f', 'org.joml.Vector3fc')
 	s = s.replaceAll('\\b(right|up|forward)\\.([xyz])\\b', '$1.$2()')
+	s = s.replaceAll('basis\\[(\\d+)\\]\\.([xyz])\\b', 'basis[$1].$2()')
 	s = s.replace('p.setPosition(p.getX() + forward.x(), p.getY(), p.getZ() + forward.z());',
 		'p.setPosition(p.getX() + forward.x, p.getY(), p.getZ() + forward.z);')
 	s = s.replaceAll('entry\\.getProfile\\(\\)\\.getId\\(\\)', 'entry.getProfile().id()')
@@ -236,6 +237,7 @@ static String transformFor26(String src) {
 	s = s.replaceAll('input\\.scancode\\(\\)', '0')
 
 	// APIs removed in 26.3 and replaced by small compatibility helpers.
+	s = s.replace('mc.textRenderer.getWidth(Text.literal(text))', 'mc.textRenderer.width(text)')
 	s = s.replace('mc.getWindow().getHandle()', 'Compat26.windowHandle(mc.getWindow())')
 	s = s.replace('mc.currentScreen', 'Compat26.currentScreen(mc)')
 	s = s.replace('net.minecraft.util.math.BlockPos.ORIGIN', 'net.minecraft.util.math.BlockPos.ZERO')

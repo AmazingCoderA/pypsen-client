@@ -167,7 +167,7 @@ public class PypsenClient implements ClientModInitializer {
             if (mc.player == null || panicOn) return;
 
             // ── MAIN HUD ──
-            if (hudOn) {
+            if (hudOn && PypsenFeatures.hudVisible()) {
                 List<String> lines = new ArrayList<>();
                 lines.add("\u00a7a\u00a7lPypsen v2 \u00a77[PRO]");
                 if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + BYPASS_NAMES[speedBypass] + "]");
@@ -212,6 +212,9 @@ public class PypsenClient implements ClientModInitializer {
                 if (PypsenFeatures.autoEatOn) lines.add("\u00a7aAutoEat \u00a77" + String.format("%.0fHP", PypsenFeatures.autoEatHealth));
                 if (PypsenFeatures.spiderProOn) lines.add("\u00a72Spider Pro");
                 if (PypsenFeatures.noclipProOn) lines.add("\u00a78Noclip Pro");
+                if (PypsenFeatures.stealthOn) lines.add("\u00a78Stealth \u00a77" + PypsenFeatures.STEALTH_MODES[MathHelper.clamp(PypsenFeatures.stealthMode, 0, PypsenFeatures.STEALTH_MODES.length - 1)]);
+                if (PypsenFeatures.comboCounterOn && PypsenFeatures.comboCount() > 1) lines.add("\u00a7eCombo x" + PypsenFeatures.comboCount());
+                if (PypsenFeatures.killFeedOn && PypsenFeatures.killCount() > 0) lines.add("\u00a7cKills \u00a77" + PypsenFeatures.killCount());
 
                 // TPS & Ping
                 lines.add("");
@@ -228,7 +231,7 @@ public class PypsenClient implements ClientModInitializer {
             }
 
             // ── TARGET HUD ──
-            if (targetHudOn && currentTarget != null && currentTarget.isAlive() && mc.player.distanceTo(currentTarget) <= auraRange * 1.5) {
+            if (targetHudOn && PypsenFeatures.hudVisible() && currentTarget != null && currentTarget.isAlive() && mc.player.distanceTo(currentTarget) <= auraRange * 1.5) {
                 int sw = mc.getWindow().getScaledWidth();
                 int sh = mc.getWindow().getScaledHeight();
                 int tx = sw / 2 + 20;
@@ -237,7 +240,7 @@ public class PypsenClient implements ClientModInitializer {
                 ctx.fill(tx, ty, tx + 140, ty + 50, 0x90000000); // Background
                 ctx.fill(tx, ty, tx + 140, ty + 2, 0xFF55FF55);  // Top border
 
-                String name = currentTarget.getName().getString();
+                String name = PypsenFeatures.label(currentTarget.getName().getString(), "Player");
                 float hp = currentTarget.getHealth();
                 float maxHp = currentTarget.getMaxHealth();
                 int armor = currentTarget.getArmor();
@@ -1614,7 +1617,7 @@ public class PypsenClient implements ClientModInitializer {
                 ItemStack stack = ((ItemEntity) e).getStack();
                 label = stack.getName().getString() + " x" + stack.getCount();
             } else {
-                label = e.getName().getString();
+                label = PypsenFeatures.label(e.getName().getString(), "Entity");
             }
 
             int textY = Math.max(2, y1 - 11);

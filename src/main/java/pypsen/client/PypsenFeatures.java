@@ -3,6 +3,7 @@ package pypsen.client;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.Camera;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.entity.Entity;
@@ -48,6 +49,13 @@ public final class PypsenFeatures {
     // Crystal Aura upgrades
     public static boolean crystalSafety = true, crystalAutoSwitch = true, crystalRotate = true;
     public static boolean crystalOffHand = false, crystalOnlyPlayers = false;
+    // Visual FX
+    public static boolean fxOn = true, hitMarkerOn = false, damageFlashOn = false;
+    public static boolean targetTrailOn = false, comboCounterOn = false, killFeedOn = false;
+    public static boolean skeletonEspOn = false, fxScanlinesOn = false;
+    // Stealth / obfuscation (client-side only)
+    public static boolean stealthOn = false, stealthHideHud = false, stealthNeutralLabels = false;
+    public static boolean stealthRandomDelays = false, stealthRotatingName = false;
 
     // ── VALUES ──
     public static float aiRange = 6f, aiCps = 10f, crystalRange = 6f, crystalCps = 8f;
@@ -63,12 +71,17 @@ public final class PypsenFeatures {
     public static float crystalMinHp = 0f, crystalSelfDmg = 8f, crystalTotemHp = 0.5f;
     public static float crystalFaceArmor = 6f, crystalFaceHp = 8f;
     public static int crystalMaxCrystals = 2;
+    // Visual FX values
+    public static float hitMarkerTime = 180f, damageFlashAlpha = 0.25f;
+    public static float comboReset = 3000f, skeletonRange = 48f;
+    public static int fxThickness = 1;
 
     // ── MODES ──
     public static int aiPreset = 0, crystalMode = 0, fakeLagMode = 0, spiderProMode = 0;
     public static int noclipProMode = 0, hudStyle = 1;
     public static int aiTargetMode = 0, aiRotationMode = 0;
     public static int crystalTargetMode = 0, crystalPlaceMode = 0;
+    public static int crosshairStyle = 1, fxTheme = 0, hitMarkerStyle = 0, stealthMode = 0;
     public static final String[] AI_PRESETS = {"Balanced", "Aggressive", "Legit", "HvH", "Smart"};
     public static final String[] AI_TARGET_MODES = {"AI Score", "Lowest HP", "Closest", "Shield First", "Armor Break"};
     public static final String[] AI_ROTATION_MODES = {"Instant", "Smooth", "Jitter", "No Rotate"};
@@ -76,6 +89,11 @@ public final class PypsenFeatures {
         "AntiTotem Rush", "FacePlace", "Crystal Storm", "Safe Hybrid"};
     public static final String[] CRYSTAL_TARGET_MODES = {"Smart", "Closest", "Lowest HP", "No Shield", "High Armor"};
     public static final String[] CRYSTAL_PLACE_MODES = {"Feet", "Head", "Offset", "Smart Angle"};
+    public static final String[] CROSSHAIR_STYLES = {"Default", "Dot", "Cross", "Circle", "Dynamic", "Hidden"};
+    public static final String[] FX_THEMES = {"Green", "Red", "Cyan", "Purple", "Gold", "Rainbow"};
+    public static final String[] HITMARKER_STYLES = {"X", "Corners", "Square", "Pulse"};
+    public static final String[] STEALTH_MODES = {"Clean HUD", "Neutral Labels", "Random Delays", "Full Stealth"};
+    public static final String[] STEALTH_NAMES = {"Protected", "Player", "Guest", "Steve", "Alex", "Anonymous"};
     public static final String[] FAKELAG_MODES = {"Motion", "All C2S", "Burst"};
     public static final String[] SPIDER_PRO_MODES = {"Wall Climb", "AntiStuck", "Phase Jump", "Turbo"};
     public static final String[] NOCLIP_PRO_MODES = {"Phantom", "Phase Step", "Compact", "Ghost"};
@@ -89,6 +107,8 @@ public final class PypsenFeatures {
     public static int keyNoclipPro = GLFW.GLFW_KEY_UNKNOWN;
     public static int keySpiderPro = GLFW.GLFW_KEY_UNKNOWN;
     public static int keyVisualsPro = GLFW.GLFW_KEY_UNKNOWN;
+    public static int keyFx = GLFW.GLFW_KEY_UNKNOWN;
+    public static int keyStealth = GLFW.GLFW_KEY_UNKNOWN;
 
     public static String aiTrainFile = "pypsen_ai.txt";
 
@@ -96,6 +116,8 @@ public final class PypsenFeatures {
     private static final List<Packet<?>> packets = new ArrayList<>();
     private static final Set<Integer> pressedFeatureKeys = new HashSet<>();
     private static final List<double[]> training = new ArrayList<>();
+    private static final List<String> killFeed = new ArrayList<>();
+    private static final List<Long> killFeedTime = new ArrayList<>();
     private static final Random random = new Random();
     private static boolean flushing = false;
     private static double[] presetWeights = {0.35, 0.25, 0.20, 0.10, 0.10, 0.20, 0.02, 1.0};
@@ -104,7 +126,10 @@ public final class PypsenFeatures {
     private static File runDir = null;
     private static long lastFlush = 0L, lastAiAttack = 0L, lastCrystal = 0L, lastEat = 0L;
     private static long lastAiSwitch = 0L, lastCrystalPlace = 0L, lastAutoTrain = 0L;
+    private static long lastHitMarker = 0L, lastDamage = 0L, lastNameChange = 0L;
+    private static float lastPlayerHealth = -1f;
     private static int aiTick = 0, samplesLoaded = 0, samplesLearned = 0;
+    private static int combo = 0, totalKills = 0;
     public static double aiConfidence = 0.0;
 
     private PypsenFeatures() {}
@@ -115,6 +140,7 @@ public final class PypsenFeatures {
         applyPreset(aiPreset);
         loadAiFile(mc.runDirectory);
         if (aiAutoTrain) trainModel(aiTrainRounds);
+        if (stealthOn) applyStealthMode(stealthMode);
     }
 
     /** Called from the main client tick handler. */
@@ -129,11 +155,15 @@ public final class PypsenFeatures {
         tickAiAura(mc, p);
         tickCrystalAura(mc, p);
         tickHudRainbow(mc);
+        tickFx(p);
+        tickStealth();
     }
 
     /** Called from the main HUD render callback. */
     public static void render(DrawContext ctx, MinecraftClient mc) {
-        if (!advancedVisualsOn || mc.player == null) return;
+        if (mc.player == null) return;
+        if (fxOn) drawFx(ctx, mc);
+        if (!advancedVisualsOn) return;
         LivingEntity target = aiTarget != null && aiTarget.isAlive() ? aiTarget : PypsenClient.getAuraTarget();
         if (target == null) return;
 
@@ -177,6 +207,277 @@ public final class PypsenFeatures {
                 + (tp.isBlocking() ? " \u00a7e[SHIELD]" : "")
                 + " \u00a77armor " + tp.getArmor();
             ctx.drawTextWithShadow(mc.textRenderer, Text.literal(tag), x + 6, y + h - 28, 0xFFFFFF);
+        }
+    }
+
+    // ══════════ VISUAL FX ══════════
+
+    private static void tickFx(PlayerEntity p) {
+        long now = System.currentTimeMillis();
+        float hp = p.getHealth() + p.getAbsorptionAmount();
+        if (lastPlayerHealth < 0f) lastPlayerHealth = hp;
+        if (hp < lastPlayerHealth - 0.05f) lastDamage = now;
+        lastPlayerHealth = hp;
+        if (combo > 0 && now - lastHitMarker > Math.max(0f, comboReset)) combo = 0;
+        while (!killFeed.isEmpty() && now - killFeedTime.get(0) > 5000L) {
+            killFeed.remove(0);
+            killFeedTime.remove(0);
+        }
+    }
+
+    private static void tickStealth() {
+        if (!stealthOn || !stealthRotatingName) return;
+        long now = System.currentTimeMillis();
+        if (now - lastNameChange < 10000L) return;
+        lastNameChange = now;
+        PypsenClient.fakeName = STEALTH_NAMES[random.nextInt(STEALTH_NAMES.length)];
+    }
+
+    private static void registerHit() {
+        lastHitMarker = System.currentTimeMillis();
+        combo++;
+    }
+
+    private static void registerHit(LivingEntity target) {
+        registerHit();
+        if (target == null || target.isAlive()) return;
+        totalKills++;
+        killFeed.add("\u00a7cKilled \u00a7f" + target.getName().getString());
+        killFeedTime.add(System.currentTimeMillis());
+        while (killFeed.size() > 5) {
+            killFeed.remove(0);
+            killFeedTime.remove(0);
+        }
+    }
+
+    private static float stealthJitter() {
+        return stealthOn && stealthRandomDelays ? (float) (random.nextDouble() * 45.0) : 0f;
+    }
+
+    public static boolean hudVisible() {
+        return !(stealthOn && stealthHideHud);
+    }
+
+    public static String label(String real, String neutral) {
+        return stealthOn && stealthNeutralLabels ? neutral : real;
+    }
+
+    public static int comboCount() {
+        return combo;
+    }
+
+    public static int killCount() {
+        return totalKills;
+    }
+
+    public static void applyStealthMode(int mode) {
+        int m = clamp(mode, 0, STEALTH_MODES.length - 1);
+        stealthOn = true;
+        stealthHideHud = m == 0 || m == 3;
+        stealthNeutralLabels = m == 1 || m == 3;
+        stealthRandomDelays = m == 2 || m == 3;
+    }
+
+    private static void drawFx(DrawContext ctx, MinecraftClient mc) {
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        int cx = sw / 2;
+        int cy = sh / 2;
+        int color = fxColor(0xFF);
+        long now = System.currentTimeMillis();
+
+        if (fxScanlinesOn) {
+            for (int yy = 0; yy < sh; yy += 4) ctx.fill(0, yy, sw, yy + 1, 0x08000000);
+        }
+
+        drawCrosshair(ctx, mc, cx, cy, color);
+        if (hitMarkerOn && now - lastHitMarker <= Math.max(0f, hitMarkerTime)) {
+            drawHitMarker(ctx, cx, cy, now - lastHitMarker, color);
+        }
+        if (damageFlashOn && lastDamage > 0L && now - lastDamage < 350L) {
+            int a = (int) (clamp(damageFlashAlpha, 0f, 1f) * 255f);
+            int flash = a << 24 | 0xFF2020;
+            ctx.fill(0, 0, sw, 3, flash);
+            ctx.fill(0, sh - 3, sw, sh, flash);
+            ctx.fill(0, 0, 3, sh, flash);
+            ctx.fill(sw - 3, 0, sw, sh, flash);
+        }
+        if (comboCounterOn && combo > 1 && now - lastHitMarker <= Math.max(0f, comboReset)) {
+            drawCenteredText(ctx, mc, "\u00a7eCOMBO x" + combo, cx, cy + 24, color);
+        }
+        if (killFeedOn && !killFeed.isEmpty()) {
+            int yy = 6;
+            for (int i = killFeed.size() - 1; i >= 0; i--) {
+                ctx.drawTextWithShadow(mc.textRenderer, Text.literal(killFeed.get(i)), 6, yy, 0xFFFFFF);
+                yy += 12;
+            }
+        }
+        if (targetTrailOn) drawTargetTrail(ctx, mc, cx, cy, color);
+        if (skeletonEspOn) drawSkeletonEsp(ctx, mc, color);
+    }
+
+    private static void drawCrosshair(DrawContext ctx, MinecraftClient mc, int cx, int cy, int color) {
+        int style = clamp(crosshairStyle, 0, CROSSHAIR_STYLES.length - 1);
+        if (style == 0) return;
+        int t = Math.max(1, clamp(fxThickness, 1, 4));
+        if (style == 1) {
+            ctx.fill(cx - t, cy - t, cx + t + 1, cy + t + 1, color);
+        } else if (style == 2 || style == 4) {
+            double speed = Math.abs(mc.player.getVelocity().x) + Math.abs(mc.player.getVelocity().z);
+            int gap = style == 4 ? 3 + (int) Math.min(8.0, speed * 8.0) : 4;
+            int len = 5;
+            ctx.fill(cx - gap - len, cy, cx - gap, cy + t, color);
+            ctx.fill(cx + gap, cy, cx + gap + len, cy + t, color);
+            ctx.fill(cx, cy - gap - len, cx + t, cy - gap, color);
+            ctx.fill(cx, cy + gap, cx + t, cy + gap + len, color);
+        } else if (style == 3) {
+            for (int a = 0; a < 360; a += 45) {
+                double rad = Math.toRadians(a);
+                int dx = (int) Math.round(Math.cos(rad) * 6.0);
+                int dy = (int) Math.round(Math.sin(rad) * 6.0);
+                ctx.fill(cx + dx - t, cy + dy - t, cx + dx + t + 1, cy + dy + t + 1, color);
+            }
+        } else {
+            ctx.fill(cx - 8, cy - 8, cx + 8, cy + 8, 0x66000000);
+        }
+    }
+
+    private static void drawHitMarker(DrawContext ctx, int cx, int cy, long age, int color) {
+        int style = clamp(hitMarkerStyle, 0, HITMARKER_STYLES.length - 1);
+        int r = 6 + (int) Math.min(8.0, age / 22.0);
+        if (style == 0) {
+            drawEspLine(ctx, cx - r, cy - r, cx + r, cy + r, color);
+            drawEspLine(ctx, cx - r, cy + r, cx + r, cy - r, color);
+        } else if (style == 1) {
+            int g = r + 3;
+            drawEspLine(ctx, cx - g, cy - g, cx - g + 4, cy - g, color);
+            drawEspLine(ctx, cx - g, cy - g, cx - g, cy - g + 4, color);
+            drawEspLine(ctx, cx + g, cy - g, cx + g - 4, cy - g, color);
+            drawEspLine(ctx, cx + g, cy - g, cx + g, cy - g + 4, color);
+            drawEspLine(ctx, cx - g, cy + g, cx - g + 4, cy + g, color);
+            drawEspLine(ctx, cx - g, cy + g, cx - g, cy + g - 4, color);
+            drawEspLine(ctx, cx + g, cy + g, cx + g - 4, cy + g, color);
+            drawEspLine(ctx, cx + g, cy + g, cx + g, cy + g - 4, color);
+        } else if (style == 2) {
+            ctx.fill(cx - r, cy - r, cx + r, cy - r + 1, color);
+            ctx.fill(cx - r, cy + r, cx + r, cy + r + 1, color);
+            ctx.fill(cx - r, cy - r, cx - r + 1, cy + r, color);
+            ctx.fill(cx + r, cy - r, cx + r + 1, cy + r, color);
+        } else {
+            for (int a = 0; a < 360; a += 60) {
+                double rad = Math.toRadians(a);
+                int dx = (int) Math.round(Math.cos(rad) * r);
+                int dy = (int) Math.round(Math.sin(rad) * r);
+                ctx.fill(cx + dx - 1, cy + dy - 1, cx + dx + 1, cy + dy + 1, color);
+            }
+        }
+    }
+
+    private static void drawCenteredText(DrawContext ctx, MinecraftClient mc, String text, int cx, int y, int color) {
+        int w = mc.textRenderer.getWidth(Text.literal(text));
+        ctx.drawTextWithShadow(mc.textRenderer, Text.literal(text), cx - w / 2, y, color);
+    }
+
+    private static int fxColor(int alpha) {
+        int theme = clamp(fxTheme, 0, FX_THEMES.length - 1);
+        return switch (theme) {
+            case 1 -> alpha << 24 | 0xFF5555;
+            case 2 -> alpha << 24 | 0x55FFFF;
+            case 3 -> alpha << 24 | 0xFF55FF;
+            case 4 -> alpha << 24 | 0xFFD700;
+            case 5 -> rainbow(alpha);
+            default -> alpha << 24 | 0x55FF55;
+        };
+    }
+
+    private static float[] projectPoint(Vec3d pos, Vec3d camPos, org.joml.Vector3f right,
+                                        org.joml.Vector3f up, org.joml.Vector3f forward,
+                                        double focal, int sw, int sh) {
+        double rx = pos.x - camPos.x;
+        double ry = pos.y - camPos.y;
+        double rz = pos.z - camPos.z;
+        double cx = rx * right.x + ry * right.y + rz * right.z;
+        double cy = rx * up.x + ry * up.y + rz * up.z;
+        double cz = rx * forward.x + ry * forward.y + rz * forward.z;
+        if (cz <= 0.1) return null;
+        float sx = (float) (sw * 0.5 + (cx / cz) * focal);
+        float sy = (float) (sh * 0.5 - (cy / cz) * focal);
+        if (sx < -4096f || sx > 4096f || sy < -4096f || sy > 4096f) return null;
+        return new float[]{sx, sy, (float) cz};
+    }
+
+    private static void drawEspLine(DrawContext ctx, int x0, int y0, int x1, int y1, int color) {
+        int dx = Math.abs(x1 - x0);
+        int dy = Math.abs(y1 - y0);
+        int sx = x0 < x1 ? 1 : -1;
+        int sy = y0 < y1 ? 1 : -1;
+        int err = dx - dy;
+        while (true) {
+            ctx.fill(x0, y0, x0 + 1, y0 + 1, color);
+            if (x0 == x1 && y0 == y1) break;
+            int e2 = err * 2;
+            if (e2 > -dy) { err -= dy; x0 += sx; }
+            if (e2 < dx) { err += dx; y0 += sy; }
+        }
+    }
+
+    private static boolean cameraBasis(MinecraftClient mc, int[] size, double[] focal,
+                                       Vec3d[] camPos, org.joml.Vector3f[] basis) {
+        Camera camera = mc.gameRenderer.getCamera();
+        if (!camera.isReady()) return false;
+        camPos[0] = camera.getPos();
+        basis[0] = camera.getDiagonalPlane();
+        basis[1] = camera.getVerticalPlane();
+        basis[2] = camera.getHorizontalPlane();
+        size[0] = mc.getWindow().getScaledWidth();
+        size[1] = mc.getWindow().getScaledHeight();
+        double fov = mc.options.getFov().getValue().floatValue();
+        double half = Math.toRadians(fov) * 0.5;
+        double f = (size[1] * 0.5) / Math.tan(half);
+        if (!Double.isFinite(f) || f <= 0 || half <= 0 || half >= Math.PI * 0.5) return false;
+        focal[0] = f;
+        return true;
+    }
+
+    private static void drawTargetTrail(DrawContext ctx, MinecraftClient mc, int cx, int cy, int color) {
+        LivingEntity target = aiTarget != null && aiTarget.isAlive() ? aiTarget : PypsenClient.getAuraTarget();
+        if (target == null) return;
+        int[] size = new int[2];
+        double[] focal = new double[1];
+        Vec3d[] camPos = new Vec3d[1];
+        org.joml.Vector3f[] basis = new org.joml.Vector3f[3];
+        if (!cameraBasis(mc, size, focal, camPos, basis)) return;
+        float[] p = projectPoint(eye(target), camPos[0], basis[0], basis[1], basis[2], focal[0], size[0], size[1]);
+        if (p != null) drawEspLine(ctx, cx, cy, (int) p[0], (int) p[1], color);
+    }
+
+    private static void drawSkeletonEsp(DrawContext ctx, MinecraftClient mc, int color) {
+        if (mc.world == null) return;
+        int[] size = new int[2];
+        double[] focal = new double[1];
+        Vec3d[] camPos = new Vec3d[1];
+        org.joml.Vector3f[] basis = new org.joml.Vector3f[3];
+        if (!cameraBasis(mc, size, focal, camPos, basis)) return;
+        float range = Math.max(4f, skeletonRange);
+        for (Entity e : mc.world.getEntities()) {
+            if (!(e instanceof LivingEntity living) || e == mc.player || !living.isAlive() || e.isSpectator()) continue;
+            if (PypsenClient.friends.contains(living.getName().getString())) continue;
+            if (mc.player.distanceTo(e) > range) continue;
+            Vec3d head = eye(living);
+            Vec3d feet = new Vec3d(e.getX(), e.getY(), e.getZ());
+            double w = e.getWidth() * 0.42;
+            double shoulderY = head.y - living.getHeight() * 0.28;
+            Vec3d left = new Vec3d(head.x - basis[0].x * w, shoulderY - basis[0].y * w, head.z - basis[0].z * w);
+            Vec3d right = new Vec3d(head.x + basis[0].x * w, shoulderY + basis[0].y * w, head.z + basis[0].z * w);
+            float[] ph = projectPoint(head, camPos[0], basis[0], basis[1], basis[2], focal[0], size[0], size[1]);
+            float[] pf = projectPoint(feet, camPos[0], basis[0], basis[1], basis[2], focal[0], size[0], size[1]);
+            float[] pl = projectPoint(left, camPos[0], basis[0], basis[1], basis[2], focal[0], size[0], size[1]);
+            float[] pr = projectPoint(right, camPos[0], basis[0], basis[1], basis[2], focal[0], size[0], size[1]);
+            if (ph == null || pf == null || pl == null || pr == null) continue;
+            drawEspLine(ctx, (int) ph[0], (int) ph[1], (int) pf[0], (int) pf[1], color);
+            drawEspLine(ctx, (int) pl[0], (int) pl[1], (int) pr[0], (int) pr[1], color);
+            drawEspLine(ctx, (int) pl[0], (int) pl[1], (int) pf[0], (int) pf[1], color);
+            drawEspLine(ctx, (int) pr[0], (int) pr[1], (int) pf[0], (int) pf[1], color);
         }
     }
 
@@ -241,10 +542,11 @@ public final class PypsenFeatures {
         long cooldown = (long) Math.max(1L, Math.round(20L / Math.max(1f, aiCps))) * 50L;
         long jitter = (long) Math.max(0f, aiTimingJitter);
         if (jitter > 0L) cooldown += (long) (random.nextDouble() * jitter);
-        if (now - lastAiAttack >= cooldown) {
+        if (now - lastAiAttack >= cooldown + (long) stealthJitter()) {
             lastAiAttack = now;
             mc.interactionManager.attackEntity(p, best);
             p.swingHand(Hand.MAIN_HAND);
+            registerHit(best);
             if (aiUseLearning) recordSample(p, best, 1);
             int autoEvery = Math.max(100, clamp(aiSamples, 100, 2000) / 2);
             if (aiAutoTrain && samplesLearned > 0 && samplesLearned % autoEvery == 0) trainModel(aiTrainRounds);
@@ -505,6 +807,7 @@ public final class PypsenFeatures {
             lastCrystal = now;
             mc.interactionManager.attackEntity(p, crystal);
             p.swingHand(Hand.MAIN_HAND);
+            registerHit();
         }
 
         if (mode == 1) return;
@@ -772,6 +1075,11 @@ public final class PypsenFeatures {
         if (wasPressed(handle, keyNoclipPro)) noclipProOn = !noclipProOn;
         if (wasPressed(handle, keySpiderPro)) spiderProOn = !spiderProOn;
         if (wasPressed(handle, keyVisualsPro)) advancedVisualsOn = !advancedVisualsOn;
+        if (wasPressed(handle, keyFx)) fxOn = !fxOn;
+        if (wasPressed(handle, keyStealth)) {
+            stealthOn = !stealthOn;
+            if (stealthOn) applyStealthMode(stealthMode);
+        }
     }
 
     private static boolean wasPressed(long handle, int key) {
@@ -859,6 +1167,30 @@ public final class PypsenFeatures {
         w.write("keyNoclipPro=" + keyNoclipPro + "\n");
         w.write("keySpiderPro=" + keySpiderPro + "\n");
         w.write("keyVisualsPro=" + keyVisualsPro + "\n");
+        w.write("fxOn=" + fxOn + "\n");
+        w.write("hitMarkerOn=" + hitMarkerOn + "\n");
+        w.write("damageFlashOn=" + damageFlashOn + "\n");
+        w.write("targetTrailOn=" + targetTrailOn + "\n");
+        w.write("comboCounterOn=" + comboCounterOn + "\n");
+        w.write("killFeedOn=" + killFeedOn + "\n");
+        w.write("skeletonEspOn=" + skeletonEspOn + "\n");
+        w.write("fxScanlinesOn=" + fxScanlinesOn + "\n");
+        w.write("stealthOn=" + stealthOn + "\n");
+        w.write("stealthHideHud=" + stealthHideHud + "\n");
+        w.write("stealthNeutralLabels=" + stealthNeutralLabels + "\n");
+        w.write("stealthRandomDelays=" + stealthRandomDelays + "\n");
+        w.write("stealthRotatingName=" + stealthRotatingName + "\n");
+        w.write("crosshairStyle=" + crosshairStyle + "\n");
+        w.write("fxTheme=" + fxTheme + "\n");
+        w.write("hitMarkerStyle=" + hitMarkerStyle + "\n");
+        w.write("stealthMode=" + stealthMode + "\n");
+        w.write("hitMarkerTime=" + hitMarkerTime + "\n");
+        w.write("damageFlashAlpha=" + damageFlashAlpha + "\n");
+        w.write("comboReset=" + comboReset + "\n");
+        w.write("skeletonRange=" + skeletonRange + "\n");
+        w.write("fxThickness=" + fxThickness + "\n");
+        w.write("keyFx=" + keyFx + "\n");
+        w.write("keyStealth=" + keyStealth + "\n");
         if (aiAutoSave && runDir != null) saveAiFile(runDir);
     }
 
@@ -928,6 +1260,30 @@ public final class PypsenFeatures {
                 case "keyNoclipPro" -> keyNoclipPro = Integer.parseInt(val);
                 case "keySpiderPro" -> keySpiderPro = Integer.parseInt(val);
                 case "keyVisualsPro" -> keyVisualsPro = Integer.parseInt(val);
+                case "fxOn" -> fxOn = Boolean.parseBoolean(val);
+                case "hitMarkerOn" -> hitMarkerOn = Boolean.parseBoolean(val);
+                case "damageFlashOn" -> damageFlashOn = Boolean.parseBoolean(val);
+                case "targetTrailOn" -> targetTrailOn = Boolean.parseBoolean(val);
+                case "comboCounterOn" -> comboCounterOn = Boolean.parseBoolean(val);
+                case "killFeedOn" -> killFeedOn = Boolean.parseBoolean(val);
+                case "skeletonEspOn" -> skeletonEspOn = Boolean.parseBoolean(val);
+                case "fxScanlinesOn" -> fxScanlinesOn = Boolean.parseBoolean(val);
+                case "stealthOn" -> stealthOn = Boolean.parseBoolean(val);
+                case "stealthHideHud" -> stealthHideHud = Boolean.parseBoolean(val);
+                case "stealthNeutralLabels" -> stealthNeutralLabels = Boolean.parseBoolean(val);
+                case "stealthRandomDelays" -> stealthRandomDelays = Boolean.parseBoolean(val);
+                case "stealthRotatingName" -> stealthRotatingName = Boolean.parseBoolean(val);
+                case "crosshairStyle" -> crosshairStyle = Integer.parseInt(val);
+                case "fxTheme" -> fxTheme = Integer.parseInt(val);
+                case "hitMarkerStyle" -> hitMarkerStyle = Integer.parseInt(val);
+                case "stealthMode" -> stealthMode = Integer.parseInt(val);
+                case "hitMarkerTime" -> hitMarkerTime = Float.parseFloat(val);
+                case "damageFlashAlpha" -> damageFlashAlpha = Float.parseFloat(val);
+                case "comboReset" -> comboReset = Float.parseFloat(val);
+                case "skeletonRange" -> skeletonRange = Float.parseFloat(val);
+                case "fxThickness" -> fxThickness = Integer.parseInt(val);
+                case "keyFx" -> keyFx = Integer.parseInt(val);
+                case "keyStealth" -> keyStealth = Integer.parseInt(val);
                 default -> { }
             }
         } catch (NumberFormatException ignored) {
@@ -945,6 +1301,10 @@ public final class PypsenFeatures {
         spiderProMode = clamp(spiderProMode, 0, SPIDER_PRO_MODES.length - 1);
         noclipProMode = clamp(noclipProMode, 0, NOCLIP_PRO_MODES.length - 1);
         hudStyle = clamp(hudStyle, 0, HUD_STYLES.length - 1);
+        crosshairStyle = clamp(crosshairStyle, 0, CROSSHAIR_STYLES.length - 1);
+        fxTheme = clamp(fxTheme, 0, FX_THEMES.length - 1);
+        hitMarkerStyle = clamp(hitMarkerStyle, 0, HITMARKER_STYLES.length - 1);
+        stealthMode = clamp(stealthMode, 0, STEALTH_MODES.length - 1);
         aiSamples = clamp(aiSamples, 100, 2000);
         aiTrainRounds = clamp(aiTrainRounds, 1, 2000);
         aiLearningRate = clamp(aiLearningRate, 0f, 2f);
@@ -971,6 +1331,11 @@ public final class PypsenFeatures {
         autoEatHunger = clamp(autoEatHunger, 0f, 20f);
         spiderBoost = clamp(spiderBoost, 0.02f, 0.5f);
         noclipStep = clamp(noclipStep, 0.05f, 2f);
+        hitMarkerTime = clamp(hitMarkerTime, 40f, 800f);
+        damageFlashAlpha = clamp(damageFlashAlpha, 0f, 1f);
+        comboReset = clamp(comboReset, 500f, 10000f);
+        skeletonRange = clamp(skeletonRange, 8f, 128f);
+        fxThickness = clamp(fxThickness, 1, 4);
     }
 
     private static int clamp(int v, int min, int max) { return Math.max(min, Math.min(max, v)); }
@@ -983,7 +1348,7 @@ public final class PypsenFeatures {
         private int binding = -1;
         private int page = 0;
         private int y = 8;
-        private static final int PAGE_COUNT = 6;
+        private static final int PAGE_COUNT = 8;
 
         public FeaturesScreen(Screen parent) {
             super(Text.literal("Pypsen Advanced Features"));
@@ -1071,12 +1436,40 @@ public final class PypsenFeatures {
                     plusMinusF(x, y, w, "Step", noclipStep, 0.05f, 2f, 0.05f, v -> noclipStep = v);
                     bind(x, y, w, "Noclip Key", keyNoclipPro, 5);
                 }
-                default -> {
+                case 5 -> {
                     toggle(x, y, w, "Advanced HUD", advancedVisualsOn, v -> advancedVisualsOn = v);
                     toggle(x, y, w, "Tag Details", nameTagDetailsOn, v -> nameTagDetailsOn = v);
                     toggle(x, y, w, "Rainbow HUD", hudRainbow, v -> hudRainbow = v);
                     cycle(x, y, w, "HUD Style", HUD_STYLES, hudStyle, v -> hudStyle = v);
                     bind(x, y, w, "Visuals Key", keyVisualsPro, 6);
+                }
+                case 6 -> {
+                    toggle(x, y, w, "Visual FX", fxOn, v -> fxOn = v);
+                    toggle(x, y, w, "Hit Marker", hitMarkerOn, v -> hitMarkerOn = v);
+                    cycle(x, y, w, "Marker Style", HITMARKER_STYLES, hitMarkerStyle, v -> hitMarkerStyle = v);
+                    toggle(x, y, w, "Damage Flash", damageFlashOn, v -> damageFlashOn = v);
+                    toggle(x, y, w, "Target Trail", targetTrailOn, v -> targetTrailOn = v);
+                    toggle(x, y, w, "Combo Counter", comboCounterOn, v -> comboCounterOn = v);
+                    toggle(x, y, w, "Kill Feed", killFeedOn, v -> killFeedOn = v);
+                    toggle(x, y, w, "Skeleton ESP", skeletonEspOn, v -> skeletonEspOn = v);
+                    toggle(x, y, w, "Scanlines", fxScanlinesOn, v -> fxScanlinesOn = v);
+                    cycle(x, y, w, "Crosshair", CROSSHAIR_STYLES, crosshairStyle, v -> crosshairStyle = v);
+                    cycle(x, y, w, "Theme", FX_THEMES, fxTheme, v -> fxTheme = v);
+                    bind(x, y, w, "FX Key", keyFx, 7);
+                }
+                default -> {
+                    plusMinusF(x, y, w, "Marker ms", hitMarkerTime, 40f, 800f, 20f, v -> hitMarkerTime = v);
+                    plusMinusF(x, y, w, "Flash Alpha", damageFlashAlpha, 0f, 1f, 0.05f, v -> damageFlashAlpha = v);
+                    plusMinusF(x, y, w, "Combo ms", comboReset, 500f, 10000f, 250f, v -> comboReset = v);
+                    plusMinusF(x, y, w, "Skeleton m", skeletonRange, 8f, 128f, 4f, v -> skeletonRange = v);
+                    plusMinus(x, y, w, "Thickness", fxThickness, 1, 4, 1, v -> fxThickness = v);
+                    toggle(x, y, w, "Stealth", stealthOn, v -> stealthOn = v);
+                    cycle(x, y, w, "Stealth Mode", STEALTH_MODES, stealthMode, v -> { stealthMode = v; applyStealthMode(v); });
+                    toggle(x, y, w, "Hide HUD", stealthHideHud, v -> stealthHideHud = v);
+                    toggle(x, y, w, "Neutral Labels", stealthNeutralLabels, v -> stealthNeutralLabels = v);
+                    toggle(x, y, w, "Random Delays", stealthRandomDelays, v -> stealthRandomDelays = v);
+                    toggle(x, y, w, "Rotating Name", stealthRotatingName, v -> stealthRotatingName = v);
+                    bind(x, y, w, "Stealth Key", keyStealth, 8);
                 }
             }
         }
@@ -1097,6 +1490,8 @@ public final class PypsenFeatures {
                     case 4 -> keySpiderPro = keyCode;
                     case 5 -> keyNoclipPro = keyCode;
                     case 6 -> keyVisualsPro = keyCode;
+                    case 7 -> keyFx = keyCode;
+                    case 8 -> keyStealth = keyCode;
                     default -> { }
                 }
                 binding = -1;
