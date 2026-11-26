@@ -1348,6 +1348,8 @@ public final class PypsenFeatures {
         private int binding = -1;
         private int page = 0;
         private int y = 8;
+        private int scroll = 0;
+        private int contentHeight = 0;
         private static final int PAGE_COUNT = 8;
 
         public FeaturesScreen(Screen parent) {
@@ -1357,9 +1359,9 @@ public final class PypsenFeatures {
 
         @Override
         protected void init() {
-            int x = width / 2 - 150;
-            int w = 300;
-            y = 8;
+            int w = Math.min(300, Math.max(120, width - 16));
+            int x = Math.max(8, Math.min(width / 2 - 150, width - w - 8));
+            y = 8 - scroll;
             nav(x, y, w);
 
             switch (page) {
@@ -1472,11 +1474,49 @@ public final class PypsenFeatures {
                     bind(x, y, w, "Stealth Key", keyStealth, 8);
                 }
             }
+            contentHeight = y + scroll;
         }
 
         private void nav(int x, int y, int w) {
-            addDrawable(button(x, y, w, "\u00a7bPage " + (page + 1) + "/" + PAGE_COUNT + " - Next >>>",
-                b -> { page = (page + 1) % PAGE_COUNT; rebuild(); }));
+            addDrawableChild(button(x, y, w / 2 - 2, "\u00a7b<<< Prev / " + (page + 1) + "/" + PAGE_COUNT + " / Next >>>",
+                b -> { page = (page + 1) % PAGE_COUNT; scroll = 0; rebuild(); }));
+            addDrawableChild(button(x + w / 2 + 2, y, w / 2 - 2, "\u00a7aSave Config", b -> {
+                PypsenClient.saveConfig();
+                rebuild();
+            }));
+            this.y += 22;
+            addDrawableChild(button(x, y, w / 2 - 2, "\u00a7cBack", b -> MinecraftClient.getInstance().setScreen(parent)));
+            addDrawableChild(button(x + w / 2 + 2, y, w / 2 - 2, "\u00a75Classic Menu", b -> {
+                MinecraftClient.getInstance().setScreen(new PypsenClient.MenuScreen());
+            }));
+            this.y += 22;
+        }
+
+        @Override
+        public boolean mouseScrolled(double mx, double my, double amount) {
+            if (binding >= 0) return true;
+            scroll += (int) (amount * 22);
+            if (scroll > 0) scroll = 0;
+            int minScroll = Math.min(0, height - 10 - contentHeight);
+            if (scroll < minScroll) scroll = minScroll;
+            rebuild();
+            return true;
+        }
+
+        @Override
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            renderBackground(ctx);
+            super.render(ctx, mx, my, d);
+            int x = Math.max(2, Math.min(width - 6, width / 2 + 152));
+            ctx.fill(x, 8, x + 3, height - 8, 0x44000000);
+            if (contentHeight > height - 16) {
+                int track = height - 16;
+                int thumb = Math.max(18, track * track / Math.max(1, contentHeight));
+                int minScroll = Math.min(0, height - 10 - contentHeight);
+                float t = minScroll == 0 ? 0f : (float) scroll / minScroll;
+                int top = 8 + (int) (t * (track - thumb));
+                ctx.fill(x, top, x + 3, top + thumb, 0xFF55FF55);
+            }
         }
 
         @Override
@@ -1505,7 +1545,11 @@ public final class PypsenFeatures {
             return ButtonWidget.builder(Text.literal(label), onClick::accept).dimensions(x, y, w, 20).build();
         }
 
-        private void addDrawable(ButtonWidget b) { addDrawableChild(b); y += 22; }
+        private void addAt(int wy, ButtonWidget b) {
+            if (wy >= 4 && wy + 20 <= height - 4) addDrawableChild(b);
+        }
+
+        private void addDrawable(ButtonWidget b) { addAt(y, b); y += 22; }
 
         private void toggle(int x, int y, int w, String label, boolean on, java.util.function.Consumer<Boolean> setter) {
             addDrawable(button(x, y, w, label + ": " + (on ? "\u00a7aON" : "\u00a7cOFF"),
@@ -1530,9 +1574,9 @@ public final class PypsenFeatures {
 
         private void plusMinus(int x, int y, int w, String label, int val, int min, int max, int step, java.util.function.IntConsumer setter) {
             int bw = w / 2 - 2;
-            addDrawableChild(ButtonWidget.builder(Text.literal("\u00a7c- " + label + " \u00a7f" + val),
+            addAt(y, ButtonWidget.builder(Text.literal("\u00a7c- " + label + " \u00a7f" + val),
                 b -> { setter.accept(clamp(val - step, min, max)); rebuild(); }).dimensions(x, y, bw, 20).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal("\u00a7a+"),
+            addAt(y, ButtonWidget.builder(Text.literal("\u00a7a+"),
                 b -> { setter.accept(clamp(val + step, min, max)); rebuild(); }).dimensions(x + bw + 4, y, bw, 20).build());
             this.y += 22;
         }
@@ -1540,9 +1584,9 @@ public final class PypsenFeatures {
         private void plusMinusF(int x, int y, int w, String label, float val, float min, float max, float step, java.util.function.Consumer<Float> setter) {
             int bw = w / 2 - 2;
             String txt = String.format(Locale.ROOT, "%s %.2f", label, val);
-            addDrawableChild(ButtonWidget.builder(Text.literal("\u00a7c- " + txt),
+            addAt(y, ButtonWidget.builder(Text.literal("\u00a7c- " + txt),
                 b -> { setter.accept(clamp(val - step, min, max)); rebuild(); }).dimensions(x, y, bw, 20).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal("\u00a7a+"),
+            addAt(y, ButtonWidget.builder(Text.literal("\u00a7a+"),
                 b -> { setter.accept(clamp(val + step, min, max)); rebuild(); }).dimensions(x + bw + 4, y, bw, 20).build());
             this.y += 22;
         }
