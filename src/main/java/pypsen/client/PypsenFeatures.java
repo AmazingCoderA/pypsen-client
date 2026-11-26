@@ -65,6 +65,7 @@ public final class PypsenFeatures {
     // AI learning values
     public static float aiLearningRate = 0.15f, aiModelInfluence = 0.7f, aiSmooth = 1f;
     public static float aiJitter = 0f, aiTimingJitter = 20f, aiSwitchDelay = 180f;
+    public static float aiJitterSmooth = 0f;
     public static int aiTrainRounds = 60;
     // Crystal placement values
     public static float crystalPlaceRange = 5f, crystalPlaceDelay = 160f, crystalPredict = 0f;
@@ -566,7 +567,7 @@ public final class PypsenFeatures {
             };
         }
         if (mode == 2) {
-            float j = Math.max(0f, aiJitter);
+            float j = Math.max(0f, aiJitter) * (1f - clamp(aiJitterSmooth, 0f, 0.95f));
             return new float[]{
                 target[0] + (float) (random.nextDouble() * 2.0 - 1.0) * j,
                 clamp(target[1] + (float) (random.nextDouble() * 2.0 - 1.0) * j, -90f, 90f)
@@ -1139,6 +1140,7 @@ public final class PypsenFeatures {
         w.write("aiModelInfluence=" + aiModelInfluence + "\n");
         w.write("aiSmooth=" + aiSmooth + "\n");
         w.write("aiJitter=" + aiJitter + "\n");
+        w.write("aiJitterSmooth=" + aiJitterSmooth + "\n");
         w.write("aiTimingJitter=" + aiTimingJitter + "\n");
         w.write("aiSwitchDelay=" + aiSwitchDelay + "\n");
         w.write("aiRange=" + aiRange + "\n");
@@ -1232,6 +1234,7 @@ public final class PypsenFeatures {
                 case "aiModelInfluence" -> aiModelInfluence = Float.parseFloat(val);
                 case "aiSmooth" -> aiSmooth = Float.parseFloat(val);
                 case "aiJitter" -> aiJitter = Float.parseFloat(val);
+                case "aiJitterSmooth" -> aiJitterSmooth = Float.parseFloat(val);
                 case "aiTimingJitter" -> aiTimingJitter = Float.parseFloat(val);
                 case "aiSwitchDelay" -> aiSwitchDelay = Float.parseFloat(val);
                 case "aiRange" -> aiRange = Float.parseFloat(val);
@@ -1311,6 +1314,7 @@ public final class PypsenFeatures {
         aiModelInfluence = clamp(aiModelInfluence, 0f, 1f);
         aiSmooth = clamp(aiSmooth, 0f, 1f);
         aiJitter = clamp(aiJitter, 0f, 15f);
+        aiJitterSmooth = clamp(aiJitterSmooth, 0f, 0.95f);
         aiTimingJitter = clamp(aiTimingJitter, 0f, 500f);
         aiSwitchDelay = clamp(aiSwitchDelay, 0f, 2000f);
         aiRange = clamp(aiRange, 2f, 16f);
@@ -1388,6 +1392,7 @@ public final class PypsenFeatures {
                     plusMinus(x, y, w, "Train Rounds", aiTrainRounds, 1, 2000, 10, v -> aiTrainRounds = v);
                     plusMinusF(x, y, w, "Smooth", aiSmooth, 0f, 1f, 0.05f, v -> aiSmooth = v);
                     plusMinusF(x, y, w, "Rot Jitter", aiJitter, 0f, 15f, 0.5f, v -> aiJitter = v);
+                    plusMinusF(x, y, w, "Jitter Smooth", aiJitterSmooth, 0f, 0.95f, 0.05f, v -> aiJitterSmooth = v);
                     plusMinusF(x, y, w, "Hit Jitter ms", aiTimingJitter, 0f, 500f, 10f, v -> aiTimingJitter = v);
                     plusMinusF(x, y, w, "Switch ms", aiSwitchDelay, 0f, 2000f, 50f, v -> aiSwitchDelay = v);
                     addDrawable(button(x, y, w, "Train 100 Hits", b -> trainModel(100)));

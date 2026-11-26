@@ -92,6 +92,7 @@ public class PypsenClient implements ClientModInitializer {
     public static float speedVal = 5f, auraRange = 6f, hitboxVal = 1f, flySpeed = 2f;
     public static float aimSpeed = 50f, clickerCps = 12f, triggerCps = 10f;
     public static float auraAimJitter = 0.0f, triggerRange = 3.0f;
+    public static float auraSmoothing = 0f;
     public static float auraStickiness = 0.0f, auraRotCurve = 0.0f, auraFov = 360f, auraRotSpeed = 180f;
     public static float autoTotemHealth = 20f;
     public static String fakeName = "Protected";
@@ -113,16 +114,26 @@ public class PypsenClient implements ClientModInitializer {
     public static final String[] AMBIENT_MODES = {"Tint", "Fog", "Vignette", "Gradient", "Spiral"};
     public static final String[] SPIN_MODES = {"Spin", "Reverse", "Pulse", "Helix", "Orbit"};
 
+    // ── Optimization / convenience ──
+    public static boolean optimizationOn = false, hitboxFix = false;
+    public static int optProfile = 1;
+    public static final String[] OPT_PROFILES = {"Eco", "Balanced", "Performance"};
+
+    // ── XRay extras ──
+    public static int xrayStealth = 0;
+    public static boolean xrayHighlight = false;
+    public static final String[] XRAY_STEALTH_MODES = {"Off", "Quiet", "Ghost"};
+
     // ── Local benchmark / creative utilities ──
     public static boolean freezeVisual = false, crasherVisual = false;
     public static boolean creativeDropOn = false, creativeDupeOn = false;
     public static int creativeDropCount = 1, creativeDupeCount = 1, dupeMode = 0;
     public static final String[] DUPE_MODES = {"Inventory Clone", "Stack Split", "Armor Clone"};
     public static double crasherScore = 0.0;
-    public static final String[] AIRJUMP_MODES = {"Vanilla", "GhostBlock", "Packet", "Real Blocks"};
-    public static final String[] NOFALL_MODES = {"Packet", "WaterBucket", "Web", "Vulcan", "Grim", "LiquidBounce", "Matrix", "NCP"};
-    public static final String[] VELOCITY_MODES = {"Cancel", "Matrix", "Grim", "LiquidBounce", "AAC"};
-    public static final String[] JESUS_MODES = {"Solid", "Bounce", "LiquidBounce", "Matrix"};
+    public static final String[] AIRJUMP_MODES = {"Vanilla", "GhostBlock", "Packet", "Real Blocks", "Silent Real"};
+    public static final String[] NOFALL_MODES = {"Packet", "WaterBucket", "Web", "Vulcan", "Grim", "LiquidBounce", "Matrix", "NCP", "Matrix Plus"};
+    public static final String[] VELOCITY_MODES = {"Cancel", "Matrix", "Grim", "LiquidBounce", "AAC", "Hyper"};
+    public static final String[] JESUS_MODES = {"Solid", "Bounce", "LiquidBounce", "Matrix", "Ghost"};
     public static final String[] PARTICLES_MODES = {"None", "Heart", "Flame", "Magic", "LiquidBounce"};
     public static final String[] AURA_MODES = {"1.9 (Strict Cooldown)", "1.8 (Spam)", "Adaptive"};
     public static final String[] AURA_TARGETS = {"Distance", "Health", "Armor", "Angle"};
@@ -131,18 +142,18 @@ public class PypsenClient implements ClientModInitializer {
     public static final String[] AURA_PARTS = {"Head", "Chest", "Legs", "Feet"};
     public static final String[] VISUALS_TARGETS = {"All", "Enemies", "Friends"};
     public static final String[] TOTEM_MODES = {"Instant", "Legit"};
-    public static final String[] SPIDER_MODES = {"Vanilla", "Jump", "Grim", "GhostBlock", "Bypass Plus", "Turbo Plus"};
+    public static final String[] SPIDER_MODES = {"Vanilla", "Jump", "Grim", "GhostBlock", "Bypass Plus", "Turbo Plus", "Turbo Max", "Silent Climb"};
     public static final String[] NOWEB_MODES = {"Vanilla", "Fast", "Grim", "Intave", "EdgeTP"};
-    public static final String[] FREEZE_MODES = {"Vanilla", "Packet", "Intave", "GhostBlock", "LiquidBounce", "Smooth Lock", "Silent Lock"};
+    public static final String[] FREEZE_MODES = {"Vanilla", "Packet", "Intave", "GhostBlock", "LiquidBounce", "Smooth Lock", "Silent Lock", "Hard Lock"};
     // Local benchmark/dry-run only: these modes never send packets to a server.
     public static final String[] CRASHER_MODES = {"Position Bench", "Swing Bench", "Interact Bench", "Math Benchmark", "Brand Bench", "Settings Bench", "Tab Bench"};
     public static final String[] CRASHER_TIMERS = {"Infinite", "5s", "10s", "Auto-Disable"};
-    public static final String[] GODMODE_MODES = {"Vanilla", "Packet", "Vulcan", "LiquidBounce"};
+    public static final String[] GODMODE_MODES = {"Vanilla", "Packet", "Vulcan", "LiquidBounce", "Hyper", "Silent"};
     public static int godModeMode = 0;
 
     public static int speedBypass = 0, auraBypass = 0, flyBypass = 0, noclipBypass = 0;
-    public static final String[] BYPASS_NAMES = {"None", "Vanilla", "Timer", "Strafe", "NCP", "Matrix", "Grim", "Funtime", "ReallyWorld", "Vulcan", "Spartan", "Grim AC", "Polar AC", "Intave"};
-    public static final String[] NOCLIP_MODES = {"Vanilla", "VClip", "HClip", "Packet"};
+    public static final String[] BYPASS_NAMES = {"None", "Vanilla", "Timer", "Strafe", "NCP", "Matrix", "Grim", "Funtime", "ReallyWorld", "Vulcan", "Spartan", "Grim AC", "Polar AC", "Intave", "Hyper", "NCP+", "Grim+", "Intave+", "Vulcan+", "Matrix+", "Polar+"};
+    public static final String[] NOCLIP_MODES = {"Vanilla", "VClip", "HClip", "Packet", "Phantom Step", "Ghost VClip"};
 
     // ══════════ KEYBINDS ══════════
     public static int keyMenu = GLFW.GLFW_KEY_MINUS, keySpeed = GLFW.GLFW_KEY_V, keyAura = GLFW.GLFW_KEY_R;
@@ -169,13 +180,14 @@ public class PypsenClient implements ClientModInitializer {
     private static long crasherStartTime = 0;
     private static float currentTps = 20.0f;
 
-    public static final Set<Block> XRAY_BLOCKS = new HashSet<>(Arrays.asList(
+    private static final Block[] DEFAULT_XRAY_BLOCKS = {
             Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE, Blocks.IRON_ORE, Blocks.DEEPSLATE_IRON_ORE,
             Blocks.GOLD_ORE, Blocks.DEEPSLATE_GOLD_ORE, Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE,
             Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE, Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE,
             Blocks.COAL_ORE, Blocks.DEEPSLATE_COAL_ORE, Blocks.COPPER_ORE, Blocks.DEEPSLATE_COPPER_ORE,
             Blocks.ANCIENT_DEBRIS, Blocks.NETHER_GOLD_ORE, Blocks.CHEST, Blocks.ENDER_CHEST, Blocks.SPAWNER
-    ));
+    };
+    public static final Set<Block> XRAY_BLOCKS = new HashSet<>(Arrays.asList(DEFAULT_XRAY_BLOCKS));
 
     // ══════════ XRAY / BASE FINDER ══════════
     public static int xrayMode = 0, xrayBypass = 0;
@@ -240,12 +252,12 @@ public class PypsenClient implements ClientModInitializer {
             if (hudOn && PypsenFeatures.hudVisible()) {
                 List<String> lines = new ArrayList<>();
                 lines.add("\u00a7a\u00a7lPypsen v2 \u00a77[PRO]");
-                if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + BYPASS_NAMES[speedBypass] + "]");
+                if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + BYPASS_NAMES[MathHelper.clamp(speedBypass, 0, BYPASS_NAMES.length - 1)] + "]");
                 if (auraOn)        lines.add("\u00a7cKillAura \u00a77" + String.format("%.1f", auraRange) + " [" + BYPASS_NAMES[MathHelper.clamp(auraBypass, 0, BYPASS_NAMES.length - 1)] + "]"
                         + (auraNotNear ? " \u00a7eNOT NEAR " + String.format("%.1f", auraNotNearRange) + "m" : ""));
                 if (hitboxOn)      lines.add("\u00a7eHitbox \u00a77" + String.format("%.1f", hitboxVal));
-                if (flyOn)         lines.add("\u00a7dFly \u00a77" + String.format("%.1f", flySpeed) + " [" + BYPASS_NAMES[flyBypass] + "]");
-                if (xrayOn)        lines.add("\u00a76XRay \u00a77[" + XRAY_MODES[MathHelper.clamp(xrayMode, 0, XRAY_MODES.length - 1)] + "]"
+                if (flyOn)         lines.add("\u00a7dFly \u00a77" + String.format("%.1f", flySpeed) + " [" + BYPASS_NAMES[MathHelper.clamp(flyBypass, 0, BYPASS_NAMES.length - 1)] + "]");
+                if (xrayOn && xrayStealth == 0) lines.add("\u00a76XRay \u00a77[" + XRAY_MODES[MathHelper.clamp(xrayMode, 0, XRAY_MODES.length - 1)] + "]"
                         + (xrayFarScan ? " \u00a7e" + String.format("%.0fm", xrayRange) : ""));
                 if (baseFinderOn)  lines.add("\u00a7aBase Finder \u00a77" + BASE_FINDER_MODES[MathHelper.clamp(baseFinderMode, 0, BASE_FINDER_MODES.length - 1)] + " \u00a7e" + String.format("%.0fm", baseFinderRange));
                 if (velocityOn)    lines.add("\u00a79Velocity");
@@ -255,6 +267,7 @@ public class PypsenClient implements ClientModInitializer {
                         + " \u00a7e" + String.format("%.0f%%", ambientStrength * 100f));
                 if (spinOn)        lines.add("\u00a75Spins \u00a77" + SPIN_MODES[MathHelper.clamp(spinMode, 0, SPIN_MODES.length - 1)]
                         + " \u00a7e" + String.format("%.1f", spinSpeed));
+                if (optimizationOn) lines.add("\u00a7aOptimization \u00a77" + OPT_PROFILES[MathHelper.clamp(optProfile, 0, OPT_PROFILES.length - 1)]);
                 if (strafeOn)      lines.add("\u00a73Strafe");
                 if (noclipOn)      lines.add("\u00a78Noclip");
                 if (antiFlagOn)    lines.add("\u00a7eAnti-Flag");
@@ -342,7 +355,7 @@ public class PypsenClient implements ClientModInitializer {
             }
 
             // ── NEW OVERLAYS ──
-            if (xrayOn && xrayFarScan) drawXrayRadar(ctx, mc);
+            if (xrayOn && (xrayFarScan || xrayHighlight) && xrayStealth < 2) drawXrayRadar(ctx, mc);
             if (baseFinderOn) drawBaseFinderRadar(ctx, mc);
             if (freezeOn && freezeVisual) drawFreezeVisual(ctx, mc);
             if (serverCrasherOn && crasherVisual) drawCrasherVisual(ctx, mc);
@@ -464,7 +477,7 @@ public class PypsenClient implements ClientModInitializer {
                 PypsenFeatures.handleKey(handle);
             }
 
-            mc.getEntityRenderDispatcher().setRenderHitboxes(hitboxOn);
+            mc.getEntityRenderDispatcher().setRenderHitboxes(hitboxOn && (!hitboxFix || mc.currentScreen == null));
 
             // ── ANTI-FLAG ──
             if (antiFlagOn) {
@@ -1494,7 +1507,8 @@ public class PypsenClient implements ClientModInitializer {
                                     else if (visualsParticles == 3) particle = net.minecraft.particle.ParticleTypes.WITCH;
                                     else if (visualsParticles == 4) particle = net.minecraft.particle.ParticleTypes.ENCHANTED_HIT;
 
-                                    for (int i = 0; i < 5; i++) {
+                                    int particleCount = optimizationOn ? 2 : 5;
+                                    for (int i = 0; i < particleCount; i++) {
                                         mc.world.addParticle(particle, target.getX() + (Math.random() - 0.5), target.getY() + Math.random() * target.getHeight(), target.getZ() + (Math.random() - 0.5), 0, 0, 0);
                                     }
                                 }
@@ -1526,8 +1540,9 @@ public class PypsenClient implements ClientModInitializer {
             PypsenFeatures.tick(mc);
 
             // ── CHUNK ANALYSIS (XRay far scan + Base Finder) ──
-            if ((xrayOn && xrayFarScan) || baseFinderOn) {
-                if (clientTick % 6 == 0) scanChunks(mc, p);
+            if ((xrayOn && (xrayFarScan || xrayHighlight)) || baseFinderOn) {
+                int scanEvery = optimizationOn ? 6 + MathHelper.clamp(optProfile, 0, OPT_PROFILES.length - 1) * 6 : 6;
+                if (clientTick % scanEvery == 0) scanChunks(mc, p);
                 if (baseFinderOn && clientTick % 80 == 0) emitBaseFinderGlow(mc, p);
             }
 
@@ -1720,6 +1735,11 @@ public class PypsenClient implements ClientModInitializer {
         });
     }
 
+    public static void resetXrayBlocks() {
+        XRAY_BLOCKS.clear();
+        XRAY_BLOCKS.addAll(Arrays.asList(DEFAULT_XRAY_BLOCKS));
+    }
+
     private static long chunkKey(int cx, int cz) {
         return (((long) cx) << 32) ^ (cz & 0xffffffffL);
     }
@@ -1774,7 +1794,8 @@ public class PypsenClient implements ClientModInitializer {
             if (Math.hypot(dx, dz) > baseFinderRange) continue;
             double wx = scan.cx * 16 + 8;
             double wz = scan.cz * 16 + 8;
-            for (int i = 0; i < 3; i++) {
+            int glowCount = optimizationOn ? 1 : 3;
+            for (int i = 0; i < glowCount; i++) {
                 mc.world.addParticle(net.minecraft.particle.ParticleTypes.FLAME,
                         wx + (Math.random() - 0.5) * 6, p.getY() + 1 + i * 1.5, wz + (Math.random() - 0.5) * 6,
                         0, 0.01, 0);
@@ -2042,6 +2063,7 @@ public class PypsenClient implements ClientModInitializer {
 
         if (applyAuraJitter && (auraAimJitter > 0 || auraRandomize)) {
             double jitter = auraRandomize ? Math.max(auraAimJitter, 0.1) : auraAimJitter;
+            jitter *= 1f - MathHelper.clamp(auraSmoothing, 0f, 0.95f);
             targetX += (Math.random() - 0.5) * jitter;
             targetY += (Math.random() - 0.5) * jitter;
             targetZ += (Math.random() - 0.5) * jitter;
@@ -2365,6 +2387,7 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("auraTargetPart=" + auraTargetPart + "\n");
             writer.write("visualsTargetMode=" + visualsTargetMode + "\n");
             writer.write("auraAimJitter=" + auraAimJitter + "\n");
+            writer.write("auraSmoothing=" + auraSmoothing + "\n");
             writer.write("auraStickiness=" + auraStickiness + "\n");
             writer.write("auraRotCurve=" + auraRotCurve + "\n");
             writer.write("auraRotSpeed=" + auraRotSpeed + "\n");
@@ -2442,6 +2465,11 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("spinMode=" + spinMode + "\n");
             writer.write("spinSpeed=" + spinSpeed + "\n");
             writer.write("spinSize=" + spinSize + "\n");
+            writer.write("optimizationOn=" + optimizationOn + "\n");
+            writer.write("optProfile=" + optProfile + "\n");
+            writer.write("hitboxFix=" + hitboxFix + "\n");
+            writer.write("xrayStealth=" + xrayStealth + "\n");
+            writer.write("xrayHighlight=" + xrayHighlight + "\n");
             writer.write("waterCrits=" + waterCrits + "\n");
             writer.write("crasherTimerMode=" + crasherTimerMode + "\n");
             writer.write("crasherMode=" + crasherMode + "\n");
@@ -2537,6 +2565,7 @@ public class PypsenClient implements ClientModInitializer {
                     case "auraTargetPart" -> auraTargetPart = Integer.parseInt(val);
                     case "visualsTargetMode" -> visualsTargetMode = Integer.parseInt(val);
                     case "auraAimJitter" -> auraAimJitter = Float.parseFloat(val);
+                    case "auraSmoothing" -> auraSmoothing = Float.parseFloat(val);
                     case "auraStickiness" -> auraStickiness = Float.parseFloat(val);
                     case "auraRotCurve" -> auraRotCurve = Float.parseFloat(val);
                     case "auraRotSpeed" -> auraRotSpeed = Float.parseFloat(val);
@@ -2614,6 +2643,11 @@ public class PypsenClient implements ClientModInitializer {
                     case "spinMode" -> spinMode = Integer.parseInt(val);
                     case "spinSpeed" -> spinSpeed = Float.parseFloat(val);
                     case "spinSize" -> spinSize = Float.parseFloat(val);
+                    case "optimizationOn" -> optimizationOn = Boolean.parseBoolean(val);
+                    case "optProfile" -> optProfile = Integer.parseInt(val);
+                    case "hitboxFix" -> hitboxFix = Boolean.parseBoolean(val);
+                    case "xrayStealth" -> xrayStealth = Integer.parseInt(val);
+                    case "xrayHighlight" -> xrayHighlight = Boolean.parseBoolean(val);
                     case "waterCrits" -> waterCrits = Boolean.parseBoolean(val);
                     case "crasherTimerMode" -> crasherTimerMode = Integer.parseInt(val);
                     case "crasherMode" -> crasherMode = Integer.parseInt(val);
@@ -2722,6 +2756,12 @@ public class PypsenClient implements ClientModInitializer {
             spinMode = MathHelper.clamp(spinMode, 0, SPIN_MODES.length - 1);
             spinSpeed = MathHelper.clamp(spinSpeed, 0f, 8f);
             spinSize = MathHelper.clamp(spinSize, 12f, 160f);
+            auraSmoothing = MathHelper.clamp(auraSmoothing, 0f, 0.95f);
+            optProfile = MathHelper.clamp(optProfile, 0, OPT_PROFILES.length - 1);
+            xrayStealth = MathHelper.clamp(xrayStealth, 0, XRAY_STEALTH_MODES.length - 1);
+            speedBypass = MathHelper.clamp(speedBypass, 0, BYPASS_NAMES.length - 1);
+            auraBypass = MathHelper.clamp(auraBypass, 0, BYPASS_NAMES.length - 1);
+            flyBypass = MathHelper.clamp(flyBypass, 0, BYPASS_NAMES.length - 1);
             godModeMode = MathHelper.clamp(godModeMode, 0, GODMODE_MODES.length - 1);
             noWebMode = MathHelper.clamp(noWebMode, 0, NOWEB_MODES.length - 1);
             noclipBypass = MathHelper.clamp(noclipBypass, 0, NOCLIP_MODES.length - 1);
@@ -2783,6 +2823,8 @@ public class PypsenClient implements ClientModInitializer {
                 scroll = 0;
             });
             addDrawableChild(searchField);
+            addDrawableChild(ButtonWidget.builder(Text.literal("Highlight"), b -> { xrayHighlight = !xrayHighlight; }).dimensions(width - 175, 10, 80, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> { resetXrayBlocks(); saveConfig(); }).dimensions(width - 90, 10, 80, 20).build());
         }
 
         @Override
@@ -2908,6 +2950,7 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(cycleBtn(x, y, w, "Timing", AURA_TIMINGS, auraTimingMode, v -> { auraTimingMode = v; rebuild(); })); y += 22;
             addDrawableChild(cycleBtn(x, y, w, "Aim Part", AURA_PARTS, auraTargetPart, v -> { auraTargetPart = v; rebuild(); })); y += 22;
             addDrawableChild(slider(x, y, w, "Aim Jitter", 0f, 1f, auraAimJitter, v -> auraAimJitter = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Jitter Smoothing", 0f, 0.95f, auraSmoothing, v -> auraSmoothing = v)); y += 22;
             addDrawableChild(slider(x, y, w, "Stickiness", 0f, 100f, auraStickiness, v -> auraStickiness = v)); y += 22;
             addDrawableChild(slider(x, y, w, "Rot Curve", 0f, 100f, auraRotCurve, v -> auraRotCurve = v)); y += 22;
             addDrawableChild(slider(x, y, w, "Rot Speed", 1f, 180f, auraRotSpeed, v -> auraRotSpeed = v)); y += 22;
@@ -3024,7 +3067,8 @@ public class PypsenClient implements ClientModInitializer {
             y = section(x, y, w, "\u00a75AimLock (Hard Lock)", aimLockOn, b -> { aimLockOn = !aimLockOn; rebuild(); }, keyAimLock, 17); y += 4;
 
             y = section(x, y, w, "Hitbox", hitboxOn, b -> { hitboxOn = !hitboxOn; rebuild(); }, keyHitbox, 2);
-            addDrawableChild(slider(x, y, w, "Size (Cube)", 0.1f, 1000f, hitboxVal, v -> hitboxVal = v)); y += 26;
+            addDrawableChild(slider(x, y, w, "Size (Cube)", 0.1f, 1000f, hitboxVal, v -> hitboxVal = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Render Fix: " + (hitboxFix ? "\u00a7aON" : "\u00a7cOFF")), b -> { hitboxFix = !hitboxFix; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "Velocity (Anti-KB)", velocityOn, b -> { velocityOn = !velocityOn; rebuild(); }, keyVelocity, 5);
             addDrawableChild(cycleBtn(x, y, w, "Mode", VELOCITY_MODES, velocityMode, v -> { velocityMode = v; rebuild(); })); y += 26;
@@ -3068,6 +3112,8 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(slider(x, y, w, "Far Range", 16f, 1024f, xrayRange, v -> xrayRange = v)); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Far Scan: " + (xrayFarScan ? "\u00a7aON" : "\u00a7cOFF")), b -> { xrayFarScan = !xrayFarScan; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("Anti-XRay: " + (xrayAntiXray ? "\u00a7aON" : "\u00a7cOFF")), b -> { xrayAntiXray = !xrayAntiXray; rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Stealth", XRAY_STEALTH_MODES, xrayStealth, v -> { xrayStealth = v; rebuild(); })); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Block Highlight: " + (xrayHighlight ? "\u00a7aON" : "\u00a7cOFF")), b -> { xrayHighlight = !xrayHighlight; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Select XRay Blocks..."), b -> {
                 MinecraftClient.getInstance().setScreen(new XrayScreen(this));
             }).dimensions(x, y, w, 20).build()); y += 26;
@@ -3125,6 +3171,9 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("More experimental settings >>>"), b -> {
                 MinecraftClient.getInstance().setScreen(new PypsenFeatures.FeaturesScreen(this));
             }).dimensions(x, y, w, 20).build()); y += 26;
+
+            y = section(x, y, w, "Optimization", optimizationOn, b -> { optimizationOn = !optimizationOn; rebuild(); }, GLFW.GLFW_KEY_UNKNOWN, -1);
+            addDrawableChild(cycleBtn(x, y, w, "Profile", OPT_PROFILES, optProfile, v -> { optProfile = v; rebuild(); })); y += 26;
 
             addDrawableChild(ButtonWidget.builder(Text.literal("Drop All Items"), b -> { dropAllItems = true; }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Creative Drop: " + (creativeDropOn ? "§aQUEUED" : "§7READY")), b -> { creativeDropOn = true; }).dimensions(x, y, w, 20).build()); y += 22;
@@ -3341,6 +3390,7 @@ public class PypsenClient implements ClientModInitializer {
                 addC(0, "Timing", AURA_TIMINGS, auraTimingMode, v->auraTimingMode=v);
                 addC(0, "Aim Part", AURA_PARTS, auraTargetPart, v->auraTargetPart=v);
                 addS(0, "Aim Jitter", 0f, 1f, auraAimJitter, v->auraAimJitter=v);
+                addS(0, "Jitter Smooth", 0f, 0.95f, auraSmoothing, v->auraSmoothing=v);
                 addS(0, "Stickiness", 0f, 100f, auraStickiness, v->auraStickiness=v);
                 addS(0, "Rot Curve", 0f, 100f, auraRotCurve, v->auraRotCurve=v);
                 addS(0, "Rot Speed", 1f, 180f, auraRotSpeed, v->auraRotSpeed=v);
@@ -3409,12 +3459,14 @@ public class PypsenClient implements ClientModInitializer {
             addMod(0, "AimLock", aimLockOn, v->aimLockOn=v, null);
             addMod(0, "Hitbox", hitboxOn, v->hitboxOn=v, () -> {
                 addS(0, "Size", 0.1f, 1000f, hitboxVal, v->hitboxVal=v);
+                addB(0, "Render Fix", hitboxFix, v->hitboxFix=v);
             });
             addMod(0, "AntiBot", antiBotOn, v->antiBotOn=v, null);
             addMod(0, "AI KillAura", PypsenFeatures.aiAuraOn, v->PypsenFeatures.aiAuraOn=v, () -> {
                 addC(0, "AI Preset", PypsenFeatures.AI_PRESETS, PypsenFeatures.aiPreset, v -> { PypsenFeatures.aiPreset = v; PypsenFeatures.applyPreset(v); });
                 addS(0, "AI Range", 2f, 16f, PypsenFeatures.aiRange, v->PypsenFeatures.aiRange=v);
                 addS(0, "AI CPS", 1f, 20f, PypsenFeatures.aiCps, v->PypsenFeatures.aiCps=v);
+                addS(0, "AI Jitter Smooth", 0f, 0.95f, PypsenFeatures.aiJitterSmooth, v->PypsenFeatures.aiJitterSmooth=v);
             });
             addMod(0, "Crystal Aura", PypsenFeatures.crystalAuraOn, v->PypsenFeatures.crystalAuraOn=v, () -> {
                 addC(0, "Mode", PypsenFeatures.CRYSTAL_MODES, PypsenFeatures.crystalMode, v->PypsenFeatures.crystalMode=v);
@@ -3474,6 +3526,8 @@ public class PypsenClient implements ClientModInitializer {
                 addS(2, "Far Range", 16f, 1024f, xrayRange, v->xrayRange=v);
                 addB(2, "Far Scan", xrayFarScan, v->xrayFarScan=v);
                 addB(2, "Anti-XRay", xrayAntiXray, v->xrayAntiXray=v);
+                addC(2, "Stealth", XRAY_STEALTH_MODES, xrayStealth, v->xrayStealth=v);
+                addB(2, "Highlight", xrayHighlight, v->xrayHighlight=v);
                 int y = cY[2] + curY[2] + scroll[2];
                 addAt(2, y, ButtonWidget.builder(Text.literal("Select Blocks..."), b -> {
                     if(client!=null) client.setScreen(new XrayScreen(this));
@@ -3530,6 +3584,9 @@ public class PypsenClient implements ClientModInitializer {
             addMod(2, "NoHurtCam", noHurtCamOn, v->noHurtCamOn=v, null);
 
             // Misc
+            addMod(3, "Optimization", optimizationOn, v->optimizationOn=v, () -> {
+                addC(3, "Profile", OPT_PROFILES, optProfile, v->optProfile=v);
+            });
             addMod(3, "Freecam", freecamOn, v->{
                 freecamOn=v;
                 if (client != null && client.player != null) {

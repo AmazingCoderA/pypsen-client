@@ -153,7 +153,7 @@ static String transformForModern(String src) {
 		'p.setPosition(p.getX() + forward.x, p.getY(), p.getZ() + forward.z);')
 	s = s.replaceAll('entry\\.getProfile\\(\\)\\.getId\\(\\)', 'entry.getProfile().id()')
 	s = s.replaceAll('packet\\.getId\\(\\)', 'packet.getEntityId()')
-	s = s.replaceAll('mc\\.getEntityRenderDispatcher\\(\\)\\.setRenderHitboxes\\(hitboxOn\\);',
+	s = s.replaceAll('mc\\.getEntityRenderDispatcher\\(\\)\\.setRenderHitboxes\\([^;]*\\);',
 		'// hitbox rendering toggle is not exposed by this Minecraft version')
 
 	return s
