@@ -20,6 +20,7 @@ import net.minecraft.item.SwordItem;
 import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
@@ -64,6 +65,16 @@ public class PypsenClient implements ClientModInitializer {
     public static boolean auraRayCast = true;
     public static boolean auraTargetPlayers = true, auraTargetMobs = true, auraTargetAnimals = false;
 
+    // ── KillAura custom layer (built-in presets stay untouched) ──
+    public static boolean auraNotNear = false, auraRotationEnabled = true, auraStrafeEnabled = false;
+    public static float auraNotNearRange = 2.5f;
+    public static final String[] AURA_PRESETS = {"Funtime", "ReallyWorld", "Test", "HvH", "Custom"};
+    public static boolean auraCustomSaved = false, auraCustomRotation = true, auraCustomStrafe = false;
+    public static boolean auraCustomNotNear = false;
+    public static int auraCustomMode = 0, auraCustomRotMode = 0, auraCustomBypass = 0;
+    public static float auraCustomRange = 6f, auraCustomFov = 360f, auraCustomRotSpeed = 180f;
+    public static float auraCustomNotNearRange = 2.5f;
+
     // ══════════ AIM ASSIST ══════════
     //Several real rotation methods instead of a single hard snap.
     public static boolean aimTargetPlayers = true, aimTargetMobs = true, aimTargetAnimals = false;
@@ -92,7 +103,15 @@ public class PypsenClient implements ClientModInitializer {
     public static int spiderMode = 0, noWebMode = 0, freezeMode = 0, crasherMode = 0, crasherTimerMode = 0;
     public static boolean airJumpOn = false, noFallOn = false;
     public static int airJumpMode = 0, noFallMode = 0, velocityMode = 0, jesusMode = 0, visualsParticles = 0;
-    public static final String[] AIRJUMP_MODES = {"Vanilla", "GhostBlock", "Packet"};
+    public static float airJumpSpeed = 1f, spiderSpeed = 1f;
+
+    // ── Local benchmark / creative utilities ──
+    public static boolean freezeVisual = false, crasherVisual = false;
+    public static boolean creativeDropOn = false, creativeDupeOn = false;
+    public static int creativeDropCount = 1, creativeDupeCount = 1, dupeMode = 0;
+    public static final String[] DUPE_MODES = {"Inventory Clone", "Stack Split", "Armor Clone"};
+    public static double crasherScore = 0.0;
+    public static final String[] AIRJUMP_MODES = {"Vanilla", "GhostBlock", "Packet", "Real Blocks"};
     public static final String[] NOFALL_MODES = {"Packet", "WaterBucket", "Web", "Vulcan", "Grim", "LiquidBounce", "Matrix", "NCP"};
     public static final String[] VELOCITY_MODES = {"Cancel", "Matrix", "Grim", "LiquidBounce", "AAC"};
     public static final String[] JESUS_MODES = {"Solid", "Bounce", "LiquidBounce", "Matrix"};
@@ -104,10 +123,11 @@ public class PypsenClient implements ClientModInitializer {
     public static final String[] AURA_PARTS = {"Head", "Chest", "Legs", "Feet"};
     public static final String[] VISUALS_TARGETS = {"All", "Enemies", "Friends"};
     public static final String[] TOTEM_MODES = {"Instant", "Legit"};
-    public static final String[] SPIDER_MODES = {"Vanilla", "Jump", "Grim", "GhostBlock"};
+    public static final String[] SPIDER_MODES = {"Vanilla", "Jump", "Grim", "GhostBlock", "Bypass Plus", "Turbo Plus"};
     public static final String[] NOWEB_MODES = {"Vanilla", "Fast", "Grim", "Intave", "EdgeTP"};
-    public static final String[] FREEZE_MODES = {"Vanilla", "Packet", "Intave", "GhostBlock", "LiquidBounce"};
-    public static final String[] CRASHER_MODES = {"Position", "Swing", "Interact", "MathBreaker", "BrandPayload", "SettingsExploit", "TabComplete"};
+    public static final String[] FREEZE_MODES = {"Vanilla", "Packet", "Intave", "GhostBlock", "LiquidBounce", "Smooth Lock", "Silent Lock"};
+    // Local benchmark/dry-run only: these modes never send packets to a server.
+    public static final String[] CRASHER_MODES = {"Position Bench", "Swing Bench", "Interact Bench", "Math Benchmark", "Brand Bench", "Settings Bench", "Tab Bench"};
     public static final String[] CRASHER_TIMERS = {"Infinite", "5s", "10s", "Auto-Disable"};
     public static final String[] GODMODE_MODES = {"Vanilla", "Packet", "Vulcan", "LiquidBounce"};
     public static int godModeMode = 0;
@@ -149,10 +169,41 @@ public class PypsenClient implements ClientModInitializer {
             Blocks.ANCIENT_DEBRIS, Blocks.NETHER_GOLD_ORE, Blocks.CHEST, Blocks.ENDER_CHEST, Blocks.SPAWNER
     ));
 
+    // ══════════ XRAY / BASE FINDER ══════════
+    public static int xrayMode = 0, xrayBypass = 0;
+    public static float xrayRange = 96f;
+    public static boolean xrayFarScan = false, xrayAntiXray = false;
+    public static final String[] XRAY_MODES = {"Selected", "Containers", "Ores", "Deep Scan"};
+    public static final String[] XRAY_BYPASS_MODES = {"Normal", "Extra Faces", "All Faces"};
+
+    public static boolean baseFinderOn = false, baseFinderChest = true, baseFinderShulker = true;
+    public static boolean baseFinderWood = true, baseFinderCarpet = true, baseFinderUnusual = true;
+    public static int baseFinderMode = 0, baseFinderRender = 0;
+    public static float baseFinderRange = 128f;
+    public static final String[] BASE_FINDER_MODES = {"Balanced", "Containers", "Wood/Caves", "Carpet", "Unusual"};
+    public static final String[] BASE_FINDER_RENDERS = {"Points", "Boxes", "Glow", "Heatmap"};
+
+    private static int clientTick = 0, scanCursor = 0;
+    private static final Map<Long, ChunkScan> chunkScans = new LinkedHashMap<>();
+    private static final List<net.minecraft.util.math.BlockPos> xrayMarks = new ArrayList<>();
+
     private static int auraTick = 0, clickTimer = 0, triggerTimer = 0;
     private static float triggerFloatTimer = 0f;
     private static boolean xrayWasOn = false, visualsWasOn = false;
     private static LivingEntity currentTarget = null;
+
+    private static final class ChunkScan {
+        int cx, cz;
+        int xray, chest, shulker, wood, carpet, unusual;
+
+        int score() {
+            return (baseFinderChest ? chest * 3 : 0)
+                    + (baseFinderShulker ? shulker * 5 : 0)
+                    + (baseFinderWood ? Math.min(wood, 40) : 0)
+                    + (baseFinderCarpet ? carpet * 2 : 0)
+                    + (baseFinderUnusual ? unusual * 4 : 0);
+        }
+    }
 
     public static LivingEntity getAuraTarget() {
         return currentTarget;
@@ -178,10 +229,13 @@ public class PypsenClient implements ClientModInitializer {
                 List<String> lines = new ArrayList<>();
                 lines.add("\u00a7a\u00a7lPypsen v2 \u00a77[PRO]");
                 if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + BYPASS_NAMES[speedBypass] + "]");
-                if (auraOn)        lines.add("\u00a7cKillAura \u00a77" + String.format("%.1f", auraRange) + " [" + BYPASS_NAMES[auraBypass] + "]");
+                if (auraOn)        lines.add("\u00a7cKillAura \u00a77" + String.format("%.1f", auraRange) + " [" + BYPASS_NAMES[MathHelper.clamp(auraBypass, 0, BYPASS_NAMES.length - 1)] + "]"
+                        + (auraNotNear ? " \u00a7eNOT NEAR " + String.format("%.1f", auraNotNearRange) + "m" : ""));
                 if (hitboxOn)      lines.add("\u00a7eHitbox \u00a77" + String.format("%.1f", hitboxVal));
                 if (flyOn)         lines.add("\u00a7dFly \u00a77" + String.format("%.1f", flySpeed) + " [" + BYPASS_NAMES[flyBypass] + "]");
-                if (xrayOn)        lines.add("\u00a76XRay");
+                if (xrayOn)        lines.add("\u00a76XRay \u00a77[" + XRAY_MODES[MathHelper.clamp(xrayMode, 0, XRAY_MODES.length - 1)] + "]"
+                        + (xrayFarScan ? " \u00a7e" + String.format("%.0fm", xrayRange) : ""));
+                if (baseFinderOn)  lines.add("\u00a7aBase Finder \u00a77" + BASE_FINDER_MODES[MathHelper.clamp(baseFinderMode, 0, BASE_FINDER_MODES.length - 1)] + " \u00a7e" + String.format("%.0fm", baseFinderRange));
                 if (velocityOn)    lines.add("\u00a79Velocity");
                 if (aimOn)         lines.add("\u00a75AimAssist \u00a77" + String.format("%.0fm", aimRange) + " [" + AIM_MODES[MathHelper.clamp(aimMode, 0, AIM_MODES.length - 1)] + "]");
                 if (visualsOn)     lines.add("\u00a7aVisuals");
@@ -198,7 +252,7 @@ public class PypsenClient implements ClientModInitializer {
                 if (airJumpOn)     lines.add("\u00a7bAirJump");
                 if (noFallOn)      lines.add("\u00a7aNoFall");
                 if (jesusOn)       lines.add("\u00a7bJesus");
-                if (serverCrasherOn)lines.add("\u00a7cServer Crasher");
+                if (serverCrasherOn)lines.add("\u00a7cServer Crasher \u00a77[LOCAL BENCH] \u00a7e" + String.format("%.2f", crasherScore));
                 if (godModeOn)     lines.add("\u00a7eGodMode");
                 if (autoArmorOn)   lines.add("\u00a7bAutoArmor");
                 if (fastBowOn)     lines.add("\u00a7aFastBow");
@@ -271,12 +325,19 @@ public class PypsenClient implements ClientModInitializer {
                 drawTargetMarker(ctx, mc);
             }
 
+            // ── NEW OVERLAYS ──
+            if (xrayOn && xrayFarScan) drawXrayRadar(ctx, mc);
+            if (baseFinderOn) drawBaseFinderRadar(ctx, mc);
+            if (freezeOn && freezeVisual) drawFreezeVisual(ctx, mc);
+            if (serverCrasherOn && crasherVisual) drawCrasherVisual(ctx, mc);
+
             // ── ADVANCED TARGET VISUALS ──
             PypsenFeatures.render(ctx, mc);
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (mc.player == null || mc.world == null) return;
+            clientTick++;
             var p = mc.player;
             long handle = mc.getWindow().getHandle();
 
@@ -309,6 +370,8 @@ public class PypsenClient implements ClientModInitializer {
                     strafeOn = noclipOn = antiFlagOn = autoClickerOn = triggerBotOn = freecamOn = playerEspOn = false;
                     autoTotemOn = aimLockOn = fullBrightOn = nameHiderOn = spiderOn = noWebOn = freezeOn = false;
                     jesusOn = false;
+                    airJumpOn = noFallOn = serverCrasherOn = baseFinderOn = false;
+                    creativeDropOn = creativeDupeOn = false;
                     PypsenFeatures.panic();
                     mc.worldRenderer.reload();
                 }
@@ -380,6 +443,7 @@ public class PypsenClient implements ClientModInitializer {
                     xrayOn = !xrayOn;
                     mc.worldRenderer.reload();
                 }
+                if (wasPressed(handle, keyCrasher)) serverCrasherOn = !serverCrasherOn;
                 PypsenFeatures.handleKey(handle);
             }
 
@@ -395,16 +459,23 @@ public class PypsenClient implements ClientModInitializer {
             }
 
             // ── AIRJUMP ──
-            if (airJumpOn && mc.options.jumpKey.isPressed() && !p.isOnGround() && p.fallDistance > 0.1f) {
-                if (p.age % 5 == 0) {
-                    if (airJumpMode == 0) { // Vanilla
+            // Mode 1 imitates a block for the server (old apple-jump style).
+            // Mode 3 only works when real ground is under the player.
+            if (airJumpOn && mc.options.jumpKey.isPressed() && p.fallDistance > 0.1f) {
+                int ajMode = MathHelper.clamp(airJumpMode, 0, AIRJUMP_MODES.length - 1);
+                boolean realGround = p.isOnGround();
+                if ((ajMode != 3 || realGround) && p.age % Math.max(1, 6 - (int) airJumpSpeed) == 0) {
+                    if (ajMode == 0 || ajMode == 3) { // Vanilla / Real Blocks
                         p.jump();
-                    } else if (airJumpMode == 1) { // GhostBlock
+                        p.addVelocity(0, 0.08 * airJumpSpeed, 0);
+                    } else if (ajMode == 1) { // GhostBlock — server sees a block
                         mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket(net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND, net.minecraft.util.math.BlockPos.ORIGIN, net.minecraft.util.math.Direction.DOWN));
                         p.jump();
-                    } else if (airJumpMode == 2) { // Packet
+                        p.addVelocity(0, 0.10 * airJumpSpeed, 0);
+                    } else if (ajMode == 2) { // Packet — fake on-ground
                         mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(p.getX(), p.getY(), p.getZ(), true));
                         p.jump();
+                        p.addVelocity(0, 0.06 * airJumpSpeed, 0);
                     }
                 }
             }
@@ -502,20 +573,34 @@ public class PypsenClient implements ClientModInitializer {
                     if (p.age % 2 == 0) {
                         mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(p.getX(), p.getY() + 1E-5, p.getZ(), p.isOnGround()));
                     }
+                } else if (freezeMode == 5) { // Smooth Lock
+                    Vec3d v = p.getVelocity();
+                    p.setVelocity(v.x * 0.65, v.y * 0.35, v.z * 0.65);
+                    p.fallDistance = 0;
+                } else if (freezeMode == 6) { // Silent Lock
+                    p.setVelocity(0, 0, 0);
+                    p.fallDistance = 0;
+                    if (clientTick % 12 == 0) {
+                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(p.getX(), p.getY(), p.getZ(), true));
+                    }
                 }
             }
 
             // ── SPIDER ──
             if (spiderOn && p.horizontalCollision) {
+                float spd = MathHelper.clamp(spiderSpeed, 0.5f, 4f);
                 if (spiderMode == 0) { // Vanilla
                     Vec3d v = p.getVelocity();
-                    p.setVelocity(v.x, 0.2, v.z);
+                    p.setVelocity(v.x, 0.2 * spd, v.z);
                 } else if (spiderMode == 1) { // Jump
-                    if (p.isOnGround()) p.jump();
+                    if (p.isOnGround()) {
+                        p.jump();
+                        p.addVelocity(0, 0.05 * spd, 0);
+                    }
                 } else if (spiderMode == 2) { // Grim
                     if (p.age % 4 == 0) {
                         Vec3d v = p.getVelocity();
-                        p.setVelocity(v.x, 0.4, v.z);
+                        p.setVelocity(v.x, 0.4 * spd, v.z);
                     }
                 } else if (spiderMode == 3) { // GhostBlock (F+Q Exploit)
                     if (p.age % 4 == 0) {
@@ -523,6 +608,14 @@ public class PypsenClient implements ClientModInitializer {
                         mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket(net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action.DROP_ITEM, net.minecraft.util.math.BlockPos.ORIGIN, net.minecraft.util.math.Direction.DOWN));
                         p.jump();
                     }
+                } else if (spiderMode == 4) { // Bypass Plus — stepped climb
+                    Vec3d v = p.getVelocity();
+                    p.setVelocity(v.x * (1f + 0.03f * spd), (p.age % 3 == 0 ? 0.28f : 0.12f) * spd, v.z * (1f + 0.03f * spd));
+                    p.fallDistance = 0;
+                } else if (spiderMode == 5) { // Turbo Plus — continuous boost
+                    Vec3d v = p.getVelocity();
+                    p.setVelocity(v.x * 1.12f * spd, 0.34f * spd, v.z * 1.12f * spd);
+                    p.fallDistance = 0;
                 }
             }
 
@@ -667,33 +760,9 @@ public class PypsenClient implements ClientModInitializer {
                 crasherStartTime = 0;
             }
 
-            if (serverCrasherOn && mc.getNetworkHandler() != null) {
-                if (crasherMode == 0) { // Position
-                    for (int i = 0; i < 1000; i++) {
-                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(p.getX() + 9999999, p.getY() + 9999999, p.getZ() + 9999999, true));
-                    }
-                } else if (crasherMode == 1) { // Swing
-                    for (int i = 0; i < 5000; i++) {
-                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.HandSwingC2SPacket(Hand.MAIN_HAND));
-                    }
-                } else if (crasherMode == 2) { // Interact
-                    for (int i = 0; i < 1000; i++) {
-                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket(net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND, net.minecraft.util.math.BlockPos.ORIGIN, net.minecraft.util.math.Direction.DOWN));
-                    }
-                } else if (crasherMode == 3) { // MathBreaker (NaN/Infinity)
-                    for (int i = 0; i < 100; i++) {
-                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(Double.NaN, Double.POSITIVE_INFINITY, Double.NaN, true));
-                    }
-                } else if (crasherMode == 4) { // BrandPayload
-                    net.minecraft.network.PacketByteBuf buf = new net.minecraft.network.PacketByteBuf(io.netty.buffer.Unpooled.buffer());
-                    buf.writeString("A".repeat(32000));
-                    mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.CustomPayloadC2SPacket(new net.minecraft.util.Identifier("minecraft:brand"), buf));
-                } else if (crasherMode == 5) { // SettingsExploit
-                    mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.ClientSettingsC2SPacket("A".repeat(32000), mc.options.getViewDistance().getValue(), net.minecraft.client.option.ChatVisibility.FULL, true, 0, net.minecraft.util.Arm.LEFT, true, true));
-                } else if (crasherMode == 6) { // TabComplete
-                    mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.RequestCommandCompletionsC2SPacket(0, "/" + "A".repeat(32000)));
-                }
-            }
+            // Safe local benchmark. Nothing is sent to the server, so this cannot
+            // kick the player or spam packets; it only measures client CPU cost.
+            if (serverCrasherOn && clientTick % 10 == 0) runCrasherBenchmark();
 
             // ── GODMODE ──
             if (godModeOn) {
@@ -723,6 +792,16 @@ public class PypsenClient implements ClientModInitializer {
                     }
                 }
                 dropAllItems = false;
+            }
+
+            // ── CREATIVE UTILITIES (local/creative only) ──
+            if (creativeDropOn) {
+                creativeDropItems(mc, p);
+                creativeDropOn = false;
+            }
+            if (creativeDupeOn) {
+                creativeDupeItems(p);
+                creativeDupeOn = false;
             }
 
             // ── AUTOARMOR ──
@@ -1058,7 +1137,7 @@ public class PypsenClient implements ClientModInitializer {
                 auraTick++;
 
                 // Smooth rotation logic
-                if (isRotating && (auraRotMode == 2 || auraRotMode == 16 || auraRotMode == 17)) {
+                if (auraRotationEnabled && isRotating && (auraRotMode == 2 || auraRotMode == 16 || auraRotMode == 17)) {
                     if (auraRotMode == 2) {
                         p.setYaw(p.getYaw() + (targetYaw - p.getYaw()) * 0.4f);
                         p.setPitch(p.getPitch() + (targetPitch - p.getPitch()) * 0.4f);
@@ -1114,6 +1193,9 @@ public class PypsenClient implements ClientModInitializer {
                             if (e.isInvisible() || e.age < 20 || e.getName().getString().isEmpty()) return false;
                         }
 
+                        // NOT NEAR: ignore targets inside the keep-away radius.
+                        if (auraNotNear && p.distanceTo(e) < Math.max(0.5f, auraNotNearRange)) return false;
+
                         // FOV Check — use clean rotations, never jittered ones.
                         if (auraFov < 360f) {
                             float[] rots = getRotations(p, e, false);
@@ -1168,8 +1250,14 @@ public class PypsenClient implements ClientModInitializer {
                             }
                             isRotating = true;
 
-                            // Apply Rotations based on mode
-                            switch (auraRotMode) {
+                            // STRAFE can be disabled independently in a custom preset.
+                            if (auraStrafeEnabled) {
+                                double circleAngle = Math.toRadians(targetYaw + 90.0f);
+                                p.setVelocity(-Math.sin(circleAngle) * 0.18, p.getVelocity().y, Math.cos(circleAngle) * 0.18);
+                            }
+
+                            // Apply Rotations based on mode — can be disabled in custom presets.
+                            if (auraRotationEnabled) switch (auraRotMode) {
                                 case 1 -> { // Snap
                                     p.setYaw(targetYaw);
                                     p.setPitch(targetPitch);
@@ -1327,9 +1415,11 @@ public class PypsenClient implements ClientModInitializer {
                             if (canHit) {
                                 switch (auraBypass) {
                                     case 2 -> { if (auraTick % 3 != 0) canHit = false; }
-                                    case 3 -> { // Strafe around
-                                        double circleAngle = Math.toRadians(targetYaw + 90);
-                                        p.setVelocity(-Math.sin(circleAngle) * 0.2, p.getVelocity().y, Math.cos(circleAngle) * 0.2);
+                                    case 3 -> { // Strafe around — respects the separate strafe toggle
+                                        if (auraStrafeEnabled) {
+                                            double circleAngle = Math.toRadians(targetYaw + 90);
+                                            p.setVelocity(-Math.sin(circleAngle) * 0.2, p.getVelocity().y, Math.cos(circleAngle) * 0.2);
+                                        }
                                     }
                                     case 5 -> { if (Math.random() > 0.8) canHit = false; } // Matrix
                                     case 6 -> { if (!p.canSee(target)) canHit = false; } // Grim
@@ -1418,11 +1508,345 @@ public class PypsenClient implements ClientModInitializer {
 
             PypsenFeatures.tick(mc);
 
+            // ── CHUNK ANALYSIS (XRay far scan + Base Finder) ──
+            if ((xrayOn && xrayFarScan) || baseFinderOn) {
+                if (clientTick % 6 == 0) scanChunks(mc, p);
+                if (baseFinderOn && clientTick % 80 == 0) emitBaseFinderGlow(mc, p);
+            }
+
             if (xrayOn != xrayWasOn) {
                 mc.worldRenderer.reload();
                 xrayWasOn = xrayOn;
             }
         });
+    }
+
+    // ══════════ XRAY / BASE FINDER / LOCAL UTILITIES ══════════
+
+    private static String blockName(Block block) {
+        try {
+            return block.getName().getString().toLowerCase(Locale.ROOT);
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private static boolean isOreBlock(Block block) {
+        String n = blockName(block);
+        return n.contains("ore") || n.contains("ancient debris") || n.contains("nether gold");
+    }
+
+    private static boolean isContainerBlock(Block block) {
+        String n = blockName(block);
+        return n.contains("chest") || n.contains("shulker") || n.contains("barrel")
+                || n.contains("hopper") || n.contains("dispenser") || n.contains("dropper");
+    }
+
+    private static boolean xrayBlockMatches(Block block) {
+        int mode = MathHelper.clamp(xrayMode, 0, XRAY_MODES.length - 1);
+        if (mode == 1) return isContainerBlock(block) || XRAY_BLOCKS.contains(block);
+        if (mode == 2) return isOreBlock(block) || XRAY_BLOCKS.contains(block);
+        if (mode == 3) return isContainerBlock(block) || isOreBlock(block) || XRAY_BLOCKS.contains(block);
+        return XRAY_BLOCKS.contains(block);
+    }
+
+    /** Called from BlockMixin. No world/position state is required on newer targets. */
+    public static boolean xrayShouldDrawSide(Block block, Direction side) {
+        if (!xrayOn) return true;
+        // Anti-xray bypass mode: stop client-side face culling entirely so hidden
+        // layers cannot be filtered out by the renderer's occlusion pass.
+        if (xrayAntiXray) return true;
+        int bypass = MathHelper.clamp(xrayBypass, 0, XRAY_BYPASS_MODES.length - 1);
+        if (!xrayBlockMatches(block)) {
+            return bypass >= 2 || (bypass == 1 && (side == Direction.UP || side == Direction.DOWN));
+        }
+        return true;
+    }
+
+    private static String xrayBlockNames() {
+        List<String> names = new ArrayList<>();
+        for (Block b : XRAY_BLOCKS) names.add(b.getName().getString());
+        Collections.sort(names);
+        return String.join(",", names);
+    }
+
+    private static void loadXrayBlockNames(String encoded) {
+        XRAY_BLOCKS.clear();
+        if (encoded.trim().isEmpty()) return;
+        Set<String> wanted = new HashSet<>(Arrays.asList(encoded.split(",")));
+        Registries.BLOCK.forEach(b -> {
+            if (wanted.contains(b.getName().getString())) XRAY_BLOCKS.add(b);
+        });
+    }
+
+    private static long chunkKey(int cx, int cz) {
+        return (((long) cx) << 32) ^ (cz & 0xffffffffL);
+    }
+
+    private static void scanChunks(MinecraftClient mc, net.minecraft.client.network.ClientPlayerEntity p) {
+        if (mc.world == null) return;
+        int px = p.getBlockPos().getX() >> 4;
+        int pz = p.getBlockPos().getZ() >> 4;
+        float scanRange = Math.max(baseFinderRange, xrayFarScan ? xrayRange : 0f);
+        int span = MathHelper.clamp((int) (scanRange / 16f), 1, 40);
+        int side = span * 2 + 1;
+        int slot = scanCursor++ % (side * side);
+        int cx = px - span + slot % side;
+        int cz = pz - span + slot / side;
+
+        ChunkScan scan = new ChunkScan();
+        scan.cx = cx;
+        scan.cz = cz;
+        try {
+            var chunk = mc.world.getChunk(cx, cz);
+            for (int lx = 0; lx < 16; lx += 4) {
+                for (int lz = 0; lz < 16; lz += 4) {
+                    for (int y = 8; y < 132; y += 8) {
+                        Block block = chunk.getBlockState(new net.minecraft.util.math.BlockPos(cx * 16 + lx, y, cz * 16 + lz)).getBlock();
+                        String n = blockName(block);
+                        if (xrayBlockMatches(block) && xrayMarks.size() < 400) {
+                            xrayMarks.add(new net.minecraft.util.math.BlockPos(cx * 16 + lx, y, cz * 16 + lz));
+                        }
+                        if (n.contains("chest")) scan.chest++;
+                        else if (n.contains("shulker")) scan.shulker++;
+                        else if (n.contains("log") || n.contains("planks")) scan.wood++;
+                        else if (n.contains("carpet")) scan.carpet++;
+                        else if (n.contains("obsidian") || n.contains("spawner") || n.contains("beacon") || n.contains("enchanting")) scan.unusual++;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            return;
+        }
+
+        chunkScans.put(chunkKey(cx, cz), scan);
+        if (chunkScans.size() > 512) chunkScans.clear();
+        if (xrayMarks.size() > 400) xrayMarks.clear();
+    }
+
+    private static void emitBaseFinderGlow(MinecraftClient mc, net.minecraft.client.network.ClientPlayerEntity p) {
+        if (mc.world == null || !baseFinderOn) return;
+        for (ChunkScan scan : chunkScans.values()) {
+            if (scan.score() < 10) continue;
+            double dx = scan.cx * 16 + 8 - p.getX();
+            double dz = scan.cz * 16 + 8 - p.getZ();
+            if (Math.hypot(dx, dz) > baseFinderRange) continue;
+            double wx = scan.cx * 16 + 8;
+            double wz = scan.cz * 16 + 8;
+            for (int i = 0; i < 3; i++) {
+                mc.world.addParticle(net.minecraft.particle.ParticleTypes.FLAME,
+                        wx + (Math.random() - 0.5) * 6, p.getY() + 1 + i * 1.5, wz + (Math.random() - 0.5) * 6,
+                        0, 0.01, 0);
+            }
+        }
+    }
+
+    private static void drawXrayRadar(DrawContext ctx, MinecraftClient mc) {
+        if (mc.world == null || mc.player == null) return;
+        Camera camera = mc.gameRenderer.getCamera();
+        if (!camera.isReady()) return;
+        Vec3d camPos = camera.getPos();
+        org.joml.Vector3f right = camera.getDiagonalPlane();
+        org.joml.Vector3f up = camera.getVerticalPlane();
+        org.joml.Vector3f forward = camera.getHorizontalPlane();
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        double fov = mc.options.getFov().getValue().floatValue();
+        double focal = (sh * 0.5) / Math.tan(Math.toRadians(fov) * 0.5);
+        if (!Double.isFinite(focal) || focal <= 0) return;
+
+        for (net.minecraft.util.math.BlockPos pos : new ArrayList<>(xrayMarks)) {
+            double mdx = pos.getX() + 0.5 - mc.player.getX();
+            double mdz = pos.getZ() + 0.5 - mc.player.getZ();
+            if (Math.hypot(mdx, mdz) > xrayRange) continue;
+            float[] s = projectToScreen(new Vec3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5),
+                    camPos, right, up, forward, focal, sw, sh);
+            if (s == null) continue;
+            int x = MathHelper.clamp((int) s[0], 0, sw);
+            int y = MathHelper.clamp((int) s[1], 0, sh);
+            ctx.fill(x - 2, y - 2, x + 2, y + 2, 0x5500FFFF);
+            ctx.fill(x - 1, y - 1, x + 1, y + 1, 0xAA00FFFF);
+        }
+    }
+
+    private static void drawBaseFinderRadar(DrawContext ctx, MinecraftClient mc) {
+        if (mc.world == null || mc.player == null) return;
+        Camera camera = mc.gameRenderer.getCamera();
+        if (!camera.isReady()) return;
+        Vec3d camPos = camera.getPos();
+        org.joml.Vector3f right = camera.getDiagonalPlane();
+        org.joml.Vector3f up = camera.getVerticalPlane();
+        org.joml.Vector3f forward = camera.getHorizontalPlane();
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        double fov = mc.options.getFov().getValue().floatValue();
+        double focal = (sh * 0.5) / Math.tan(Math.toRadians(fov) * 0.5);
+        if (!Double.isFinite(focal) || focal <= 0) return;
+
+        int renderMode = MathHelper.clamp(baseFinderRender, 0, BASE_FINDER_RENDERS.length - 1);
+        int filterMode = MathHelper.clamp(baseFinderMode, 0, BASE_FINDER_MODES.length - 1);
+        for (ChunkScan scan : chunkScans.values()) {
+            int score = scan.score();
+            if (score < 6) continue;
+            double dx = scan.cx * 16 + 8 - mc.player.getX();
+            double dz = scan.cz * 16 + 8 - mc.player.getZ();
+            if (Math.hypot(dx, dz) > baseFinderRange) continue;
+            float[] s = projectToScreen(new Vec3d(scan.cx * 16 + 8, mc.player.getY() + 2, scan.cz * 16 + 8),
+                    camPos, right, up, forward, focal, sw, sh);
+            if (s == null) continue;
+            int x = MathHelper.clamp((int) s[0], 0, sw);
+            int y = MathHelper.clamp((int) s[1], 0, sh);
+
+            int color = switch (filterMode) {
+                case 1 -> 0x55FFFF00;
+                case 2 -> 0x5500FF55;
+                case 3 -> 0x55FF00FF;
+                case 4 -> 0x55FF7700;
+                default -> score >= 18 ? 0x55FFFF00 : 0x5555AAFF;
+            };
+
+            if (renderMode == 0) {
+                ctx.fill(x - 2, y - 2, x + 2, y + 2, color);
+            } else if (renderMode == 1) {
+                ctx.fill(x - 10, y - 10, x + 10, y - 9, color);
+                ctx.fill(x - 10, y + 9, x + 10, y + 10, color);
+                ctx.fill(x - 10, y - 10, x - 9, y + 10, color);
+                ctx.fill(x + 9, y - 10, x + 10, y + 10, color);
+            } else if (renderMode == 2) {
+                ctx.fill(x - 14, y - 14, x + 14, y + 14, (color & 0x00FFFFFF) | 0x11000000);
+                ctx.fill(x - 8, y - 8, x + 8, y + 8, (color & 0x00FFFFFF) | 0x33000000);
+                ctx.fill(x - 2, y - 2, x + 2, y + 2, color);
+            } else {
+                int half = Math.min(18, 6 + score / 3);
+                ctx.fill(x - half, y - half, x + half, y + half, (color & 0x00FFFFFF) | 0x22000000);
+            }
+
+            ctx.drawTextWithShadow(mc.textRenderer, Text.literal("\u00a7e" + score), x - 8, y - 22, 0xFFFFFF);
+        }
+    }
+
+    private static void drawFreezeVisual(DrawContext ctx, MinecraftClient mc) {
+        if (mc.player == null || mc.world == null) return;
+        Camera camera = mc.gameRenderer.getCamera();
+        if (!camera.isReady()) return;
+        Vec3d camPos = camera.getPos();
+        org.joml.Vector3f right = camera.getDiagonalPlane();
+        org.joml.Vector3f up = camera.getVerticalPlane();
+        org.joml.Vector3f forward = camera.getHorizontalPlane();
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        double fov = mc.options.getFov().getValue().floatValue();
+        double focal = (sh * 0.5) / Math.tan(Math.toRadians(fov) * 0.5);
+        if (!Double.isFinite(focal) || focal <= 0) return;
+        float[] s = projectToScreen(new Vec3d(mc.player.getX(), mc.player.getY() + 1, mc.player.getZ()),
+                camPos, right, up, forward, focal, sw, sh);
+        if (s == null) return;
+        int x = (int) s[0], y = (int) s[1];
+        int color = freezeMode == 6 ? 0x55AA00FF : 0x5500FFFF;
+        ctx.fill(x - 10, y - 10, x + 10, y - 9, color);
+        ctx.fill(x - 10, y + 9, x + 10, y + 10, color);
+        ctx.fill(x - 10, y - 10, x - 9, y + 10, color);
+        ctx.fill(x + 9, y - 10, x + 10, y + 10, color);
+    }
+
+    private static void drawCrasherVisual(DrawContext ctx, MinecraftClient mc) {
+        int w = mc.getWindow().getScaledWidth();
+        ctx.fill(10, 10, 210, 24, 0x88000000);
+        ctx.fill(10, 10, 10 + MathHelper.clamp((int) (crasherScore * 8), 0, 200), 24, 0x55FF5555);
+        ctx.drawTextWithShadow(mc.textRenderer, Text.literal("\u00a7cLOCAL BENCH \u00a77" + String.format("%.3f", crasherScore)), 12, 13, 0xFFFFFF);
+    }
+
+    private static void runCrasherBenchmark() {
+        int mode = MathHelper.clamp(crasherMode, 0, CRASHER_MODES.length - 1);
+        int iterations = 2000 + mode * 500;
+        double acc = 0.0;
+        for (int i = 0; i < iterations; i++) {
+            double a = Math.sin(i * 0.017 + mode) + Math.cos(i * 0.031 - mode);
+            double b = Math.sqrt(Math.abs(a * a + 1.0));
+            acc += Math.log1p(b) * Math.tanh(a);
+        }
+        crasherScore = acc / iterations;
+    }
+
+    private static void creativeDropItems(MinecraftClient mc, net.minecraft.client.network.ClientPlayerEntity p) {
+        if (!p.isCreative() || p.isSpectator() || mc.interactionManager == null) return;
+        int count = MathHelper.clamp(creativeDropCount, 1, 64);
+        for (int i = 9; i < 45; i++) {
+            ItemStack stack = p.getInventory().getStack(i);
+            if (stack.isEmpty()) continue;
+            mc.interactionManager.clickSlot(p.playerScreenHandler.syncId, i, 1,
+                    net.minecraft.screen.slot.SlotActionType.THROW, p);
+            if (count > 1) {
+                ItemStack extra = stack.copy();
+                extra.setCount(Math.min(count, 64));
+                p.getInventory().setStack(i, extra);
+            }
+        }
+    }
+
+    private static void creativeDupeItems(net.minecraft.client.network.ClientPlayerEntity p) {
+        if (!p.isCreative() || p.isSpectator()) return;
+        int copies = MathHelper.clamp(creativeDupeCount, 1, 20);
+        int mode = MathHelper.clamp(dupeMode, 0, DUPE_MODES.length - 1);
+        ItemStack source = ItemStack.EMPTY;
+        int sourceSlot = -1;
+        for (int i = 9; i < 45; i++) {
+            ItemStack stack = p.getInventory().getStack(i);
+            if (!stack.isEmpty()) {
+                source = stack.copy();
+                sourceSlot = i;
+                break;
+            }
+        }
+        if (source.isEmpty()) return;
+        if (mode == 2) {
+            for (int type = 0; type < 4; type++) {
+                ItemStack armor = p.getInventory().getArmorStack(type);
+                if (!armor.isEmpty()) source = armor.copy();
+            }
+        }
+        int placed = 0;
+        for (int i = 9; i < 45 && placed < copies; i++) {
+            if (mode == 1 && i == sourceSlot) continue;
+            if (!p.getInventory().getStack(i).isEmpty()) continue;
+            ItemStack copy = source.copy();
+            if (mode == 1 && p.getInventory().getStack(sourceSlot).getCount() > 1) {
+                ItemStack original = p.getInventory().getStack(sourceSlot);
+                int half = original.getCount() / 2;
+                copy.setCount(half);
+                original.setCount(original.getCount() - half);
+            }
+            p.getInventory().setStack(i, copy);
+            placed++;
+        }
+    }
+
+    public static void saveAuraCustom() {
+        auraCustomSaved = true;
+        auraCustomMode = auraMode;
+        auraCustomRotMode = auraRotMode;
+        auraCustomBypass = auraBypass;
+        auraCustomRange = auraRange;
+        auraCustomFov = auraFov;
+        auraCustomRotSpeed = auraRotSpeed;
+        auraCustomRotation = auraRotationEnabled;
+        auraCustomStrafe = auraStrafeEnabled;
+        auraCustomNotNear = auraNotNear;
+        auraCustomNotNearRange = auraNotNearRange;
+    }
+
+    public static void loadAuraCustom() {
+        if (!auraCustomSaved) return;
+        auraMode = auraCustomMode;
+        auraRotMode = auraCustomRotMode;
+        auraBypass = auraCustomBypass;
+        auraRange = auraCustomRange;
+        auraFov = auraCustomFov;
+        auraRotSpeed = auraCustomRotSpeed;
+        auraRotationEnabled = auraCustomRotation;
+        auraStrafeEnabled = auraCustomStrafe;
+        auraNotNear = auraCustomNotNear;
+        auraNotNearRange = auraCustomNotNearRange;
     }
 
     private static LivingEntity findAimTarget(MinecraftClient mc, net.minecraft.client.network.ClientPlayerEntity p) {
@@ -1808,6 +2232,24 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("auraTargetPlayers=" + auraTargetPlayers + "\n");
             writer.write("auraTargetMobs=" + auraTargetMobs + "\n");
             writer.write("auraTargetAnimals=" + auraTargetAnimals + "\n");
+            writer.write("auraNotNear=" + auraNotNear + "\n");
+            writer.write("auraNotNearRange=" + auraNotNearRange + "\n");
+            writer.write("auraRotationEnabled=" + auraRotationEnabled + "\n");
+            writer.write("auraStrafeEnabled=" + auraStrafeEnabled + "\n");
+            writer.write("auraPredict=" + auraPredict + "\n");
+            writer.write("auraRandomize=" + auraRandomize + "\n");
+            writer.write("auraRayCast=" + auraRayCast + "\n");
+            writer.write("auraCustomSaved=" + auraCustomSaved + "\n");
+            writer.write("auraCustomMode=" + auraCustomMode + "\n");
+            writer.write("auraCustomRotMode=" + auraCustomRotMode + "\n");
+            writer.write("auraCustomBypass=" + auraCustomBypass + "\n");
+            writer.write("auraCustomRange=" + auraCustomRange + "\n");
+            writer.write("auraCustomFov=" + auraCustomFov + "\n");
+            writer.write("auraCustomRotSpeed=" + auraCustomRotSpeed + "\n");
+            writer.write("auraCustomRotation=" + auraCustomRotation + "\n");
+            writer.write("auraCustomStrafe=" + auraCustomStrafe + "\n");
+            writer.write("auraCustomNotNear=" + auraCustomNotNear + "\n");
+            writer.write("auraCustomNotNearRange=" + auraCustomNotNearRange + "\n");
             writer.write("autoWeapon=" + autoWeapon + "\n");
             writer.write("criticals=" + criticals + "\n");
             writer.write("auraThroughWalls=" + auraThroughWalls + "\n");
@@ -1833,14 +2275,17 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("nameHiderOn=" + nameHiderOn + "\n");
             writer.write("spiderOn=" + spiderOn + "\n");
             writer.write("spiderMode=" + spiderMode + "\n");
+            writer.write("spiderSpeed=" + spiderSpeed + "\n");
             writer.write("noWebOn=" + noWebOn + "\n");
             writer.write("noWebMode=" + noWebMode + "\n");
             writer.write("noclipOn=" + noclipOn + "\n");
             writer.write("noclipBypass=" + noclipBypass + "\n");
             writer.write("freezeOn=" + freezeOn + "\n");
             writer.write("freezeMode=" + freezeMode + "\n");
+            writer.write("freezeVisual=" + freezeVisual + "\n");
             writer.write("airJumpOn=" + airJumpOn + "\n");
             writer.write("airJumpMode=" + airJumpMode + "\n");
+            writer.write("airJumpSpeed=" + airJumpSpeed + "\n");
             writer.write("noFallOn=" + noFallOn + "\n");
             writer.write("noFallMode=" + noFallMode + "\n");
             writer.write("velocityMode=" + velocityMode + "\n");
@@ -1849,6 +2294,28 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("visualsParticles=" + visualsParticles + "\n");
             writer.write("waterCrits=" + waterCrits + "\n");
             writer.write("crasherTimerMode=" + crasherTimerMode + "\n");
+            writer.write("crasherMode=" + crasherMode + "\n");
+            writer.write("crasherVisual=" + crasherVisual + "\n");
+            writer.write("serverCrasherOn=" + serverCrasherOn + "\n");
+            writer.write("xrayOn=" + xrayOn + "\n");
+            writer.write("xrayMode=" + xrayMode + "\n");
+            writer.write("xrayBypass=" + xrayBypass + "\n");
+            writer.write("xrayRange=" + xrayRange + "\n");
+            writer.write("xrayFarScan=" + xrayFarScan + "\n");
+            writer.write("xrayAntiXray=" + xrayAntiXray + "\n");
+            writer.write("xrayBlocks=" + xrayBlockNames() + "\n");
+            writer.write("baseFinderOn=" + baseFinderOn + "\n");
+            writer.write("baseFinderMode=" + baseFinderMode + "\n");
+            writer.write("baseFinderRender=" + baseFinderRender + "\n");
+            writer.write("baseFinderRange=" + baseFinderRange + "\n");
+            writer.write("baseFinderChest=" + baseFinderChest + "\n");
+            writer.write("baseFinderShulker=" + baseFinderShulker + "\n");
+            writer.write("baseFinderWood=" + baseFinderWood + "\n");
+            writer.write("baseFinderCarpet=" + baseFinderCarpet + "\n");
+            writer.write("baseFinderUnusual=" + baseFinderUnusual + "\n");
+            writer.write("creativeDropCount=" + creativeDropCount + "\n");
+            writer.write("creativeDupeCount=" + creativeDupeCount + "\n");
+            writer.write("dupeMode=" + dupeMode + "\n");
             writer.write("godModeMode=" + godModeMode + "\n");
             writer.write("seeInvisOn=" + seeInvisOn + "\n");
             writer.write("noFireOn=" + noFireOn + "\n");
@@ -1928,6 +2395,24 @@ public class PypsenClient implements ClientModInitializer {
                     case "auraTargetPlayers" -> auraTargetPlayers = Boolean.parseBoolean(val);
                     case "auraTargetMobs" -> auraTargetMobs = Boolean.parseBoolean(val);
                     case "auraTargetAnimals" -> auraTargetAnimals = Boolean.parseBoolean(val);
+                    case "auraNotNear" -> auraNotNear = Boolean.parseBoolean(val);
+                    case "auraNotNearRange" -> auraNotNearRange = Float.parseFloat(val);
+                    case "auraRotationEnabled" -> auraRotationEnabled = Boolean.parseBoolean(val);
+                    case "auraStrafeEnabled" -> auraStrafeEnabled = Boolean.parseBoolean(val);
+                    case "auraPredict" -> auraPredict = Boolean.parseBoolean(val);
+                    case "auraRandomize" -> auraRandomize = Boolean.parseBoolean(val);
+                    case "auraRayCast" -> auraRayCast = Boolean.parseBoolean(val);
+                    case "auraCustomSaved" -> auraCustomSaved = Boolean.parseBoolean(val);
+                    case "auraCustomMode" -> auraCustomMode = Integer.parseInt(val);
+                    case "auraCustomRotMode" -> auraCustomRotMode = Integer.parseInt(val);
+                    case "auraCustomBypass" -> auraCustomBypass = Integer.parseInt(val);
+                    case "auraCustomRange" -> auraCustomRange = Float.parseFloat(val);
+                    case "auraCustomFov" -> auraCustomFov = Float.parseFloat(val);
+                    case "auraCustomRotSpeed" -> auraCustomRotSpeed = Float.parseFloat(val);
+                    case "auraCustomRotation" -> auraCustomRotation = Boolean.parseBoolean(val);
+                    case "auraCustomStrafe" -> auraCustomStrafe = Boolean.parseBoolean(val);
+                    case "auraCustomNotNear" -> auraCustomNotNear = Boolean.parseBoolean(val);
+                    case "auraCustomNotNearRange" -> auraCustomNotNearRange = Float.parseFloat(val);
                     case "autoWeapon" -> autoWeapon = Boolean.parseBoolean(val);
                     case "criticals" -> criticals = Boolean.parseBoolean(val);
                     case "auraThroughWalls" -> auraThroughWalls = Boolean.parseBoolean(val);
@@ -1953,14 +2438,17 @@ public class PypsenClient implements ClientModInitializer {
                     case "nameHiderOn" -> nameHiderOn = Boolean.parseBoolean(val);
                     case "spiderOn" -> spiderOn = Boolean.parseBoolean(val);
                     case "spiderMode" -> spiderMode = Integer.parseInt(val);
+                    case "spiderSpeed" -> spiderSpeed = Float.parseFloat(val);
                     case "noWebOn" -> noWebOn = Boolean.parseBoolean(val);
                     case "noWebMode" -> noWebMode = Integer.parseInt(val);
                     case "noclipOn" -> noclipOn = Boolean.parseBoolean(val);
                     case "noclipBypass" -> noclipBypass = Integer.parseInt(val);
                     case "freezeOn" -> freezeOn = Boolean.parseBoolean(val);
                     case "freezeMode" -> freezeMode = Integer.parseInt(val);
+                    case "freezeVisual" -> freezeVisual = Boolean.parseBoolean(val);
                     case "airJumpOn" -> airJumpOn = Boolean.parseBoolean(val);
                     case "airJumpMode" -> airJumpMode = Integer.parseInt(val);
+                    case "airJumpSpeed" -> airJumpSpeed = Float.parseFloat(val);
                     case "noFallOn" -> noFallOn = Boolean.parseBoolean(val);
                     case "noFallMode" -> noFallMode = Integer.parseInt(val);
                     case "velocityMode" -> velocityMode = Integer.parseInt(val);
@@ -1969,6 +2457,28 @@ public class PypsenClient implements ClientModInitializer {
                     case "visualsParticles" -> visualsParticles = Integer.parseInt(val);
                     case "waterCrits" -> waterCrits = Boolean.parseBoolean(val);
                     case "crasherTimerMode" -> crasherTimerMode = Integer.parseInt(val);
+                    case "crasherMode" -> crasherMode = Integer.parseInt(val);
+                    case "crasherVisual" -> crasherVisual = Boolean.parseBoolean(val);
+                    case "serverCrasherOn" -> serverCrasherOn = Boolean.parseBoolean(val);
+                    case "xrayOn" -> xrayOn = Boolean.parseBoolean(val);
+                    case "xrayMode" -> xrayMode = Integer.parseInt(val);
+                    case "xrayBypass" -> xrayBypass = Integer.parseInt(val);
+                    case "xrayRange" -> xrayRange = Float.parseFloat(val);
+                    case "xrayFarScan" -> xrayFarScan = Boolean.parseBoolean(val);
+                    case "xrayAntiXray" -> xrayAntiXray = Boolean.parseBoolean(val);
+                    case "xrayBlocks" -> loadXrayBlockNames(val);
+                    case "baseFinderOn" -> baseFinderOn = Boolean.parseBoolean(val);
+                    case "baseFinderMode" -> baseFinderMode = Integer.parseInt(val);
+                    case "baseFinderRender" -> baseFinderRender = Integer.parseInt(val);
+                    case "baseFinderRange" -> baseFinderRange = Float.parseFloat(val);
+                    case "baseFinderChest" -> baseFinderChest = Boolean.parseBoolean(val);
+                    case "baseFinderShulker" -> baseFinderShulker = Boolean.parseBoolean(val);
+                    case "baseFinderWood" -> baseFinderWood = Boolean.parseBoolean(val);
+                    case "baseFinderCarpet" -> baseFinderCarpet = Boolean.parseBoolean(val);
+                    case "baseFinderUnusual" -> baseFinderUnusual = Boolean.parseBoolean(val);
+                    case "creativeDropCount" -> creativeDropCount = Integer.parseInt(val);
+                    case "creativeDupeCount" -> creativeDupeCount = Integer.parseInt(val);
+                    case "dupeMode" -> dupeMode = Integer.parseInt(val);
                     case "godModeMode" -> godModeMode = Integer.parseInt(val);
                     case "seeInvisOn" -> seeInvisOn = Boolean.parseBoolean(val);
                     case "noFireOn" -> noFireOn = Boolean.parseBoolean(val);
@@ -2030,6 +2540,39 @@ public class PypsenClient implements ClientModInitializer {
             aimRange = MathHelper.clamp(aimRange, 3f, 32f);
             aimFov = MathHelper.clamp(aimFov, 10f, 360f);
             aimJitter = MathHelper.clamp(aimJitter, 0f, 10f);
+
+            // New settings: never let an old or hand-edited config crash the GUI.
+            auraNotNearRange = MathHelper.clamp(auraNotNearRange, 0.5f, auraRange);
+            auraCustomNotNearRange = MathHelper.clamp(auraCustomNotNearRange, 0.5f, auraCustomRange);
+            auraCustomMode = MathHelper.clamp(auraCustomMode, 0, AURA_MODES.length - 1);
+            auraCustomRotMode = MathHelper.clamp(auraCustomRotMode, 0, AURA_ROTS.length - 1);
+            auraCustomBypass = MathHelper.clamp(auraCustomBypass, 0, BYPASS_NAMES.length - 1);
+            auraCustomRange = MathHelper.clamp(auraCustomRange, 1f, 20f);
+            auraCustomFov = MathHelper.clamp(auraCustomFov, 10f, 360f);
+            auraCustomRotSpeed = MathHelper.clamp(auraCustomRotSpeed, 1f, 180f);
+            spiderMode = MathHelper.clamp(spiderMode, 0, SPIDER_MODES.length - 1);
+            freezeMode = MathHelper.clamp(freezeMode, 0, FREEZE_MODES.length - 1);
+            airJumpMode = MathHelper.clamp(airJumpMode, 0, AIRJUMP_MODES.length - 1);
+            noFallMode = MathHelper.clamp(noFallMode, 0, NOFALL_MODES.length - 1);
+            velocityMode = MathHelper.clamp(velocityMode, 0, VELOCITY_MODES.length - 1);
+            jesusMode = MathHelper.clamp(jesusMode, 0, JESUS_MODES.length - 1);
+            visualsParticles = MathHelper.clamp(visualsParticles, 0, PARTICLES_MODES.length - 1);
+            godModeMode = MathHelper.clamp(godModeMode, 0, GODMODE_MODES.length - 1);
+            noWebMode = MathHelper.clamp(noWebMode, 0, NOWEB_MODES.length - 1);
+            noclipBypass = MathHelper.clamp(noclipBypass, 0, NOCLIP_MODES.length - 1);
+            crasherMode = MathHelper.clamp(crasherMode, 0, CRASHER_MODES.length - 1);
+            crasherTimerMode = MathHelper.clamp(crasherTimerMode, 0, CRASHER_TIMERS.length - 1);
+            spiderSpeed = MathHelper.clamp(spiderSpeed, 0.5f, 4f);
+            airJumpSpeed = MathHelper.clamp(airJumpSpeed, 0.5f, 4f);
+            xrayMode = MathHelper.clamp(xrayMode, 0, XRAY_MODES.length - 1);
+            xrayBypass = MathHelper.clamp(xrayBypass, 0, XRAY_BYPASS_MODES.length - 1);
+            xrayRange = MathHelper.clamp(xrayRange, 16f, 1024f);
+            baseFinderMode = MathHelper.clamp(baseFinderMode, 0, BASE_FINDER_MODES.length - 1);
+            baseFinderRender = MathHelper.clamp(baseFinderRender, 0, BASE_FINDER_RENDERS.length - 1);
+            baseFinderRange = MathHelper.clamp(baseFinderRange, 16f, 1024f);
+            creativeDropCount = MathHelper.clamp(creativeDropCount, 1, 64);
+            creativeDupeCount = MathHelper.clamp(creativeDupeCount, 1, 20);
+            dupeMode = MathHelper.clamp(dupeMode, 0, DUPE_MODES.length - 1);
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -2057,10 +2600,11 @@ public class PypsenClient implements ClientModInitializer {
 
         @Override
         protected void init() {
-            addDrawableChild(ButtonWidget.builder(Text.literal("<- Back"), b -> {
+            addDrawableChild(ButtonWidget.builder(Text.literal("<- Save & Back"), b -> {
+                saveConfig();
                 MinecraftClient.getInstance().setScreen(parent);
                 MinecraftClient.getInstance().worldRenderer.reload();
-            }).dimensions(10, 10, 60, 20).build());
+            }).dimensions(10, 10, 100, 20).build());
 
             searchField = new net.minecraft.client.gui.widget.TextFieldWidget(textRenderer, width / 2 - 100, 10, 200, 20, Text.literal("Search"));
             searchField.setChangedListener(text -> {
@@ -2187,7 +2731,9 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("Funtime"), b -> applyPreset("Funtime")).dimensions(x, y, w/2 - 2, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("ReallyWorld"), b -> applyPreset("ReallyWorld")).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Test"), b -> applyPreset("Test")).dimensions(x, y, w/2 - 2, 20).build());
-            addDrawableChild(ButtonWidget.builder(Text.literal("HvH"), b -> applyPreset("HvH")).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 26;
+            addDrawableChild(ButtonWidget.builder(Text.literal("HvH"), b -> applyPreset("HvH")).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Custom: Save"), b -> { saveAuraCustom(); rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Custom: Load"), b -> { loadAuraCustom(); rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 26;
 
             y = section(x, y, w, "KillAura", auraOn, b -> { auraOn = !auraOn; rebuild(); }, keyAura, 1);
             addDrawableChild(slider(x, y, w, "Range", 1f, 20f, auraRange, v -> auraRange = v)); y += 22;
@@ -2204,6 +2750,10 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("Predict: " + (auraPredict ? "§aON" : "§cOFF")), b -> { auraPredict = !auraPredict; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Randomize: " + (auraRandomize ? "§aON" : "§cOFF")), b -> { auraRandomize = !auraRandomize; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(cycleBtn(x, y, w, "Bypass", BYPASS_NAMES, auraBypass, v -> { auraBypass = v; rebuild(); })); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("NOT NEAR: " + (auraNotNear ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraNotNear = !auraNotNear; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(slider(x, y, w, "Keep Distance", 0.5f, 8f, auraNotNearRange, v -> auraNotNearRange = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Rotation: " + (auraRotationEnabled ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraRotationEnabled = !auraRotationEnabled; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Strafe: " + (auraStrafeEnabled ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraStrafeEnabled = !auraStrafeEnabled; rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Target Players: " + (auraTargetPlayers ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraTargetPlayers = !auraTargetPlayers; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Target Mobs: " + (auraTargetMobs ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraTargetMobs = !auraTargetMobs; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Target Animals: " + (auraTargetAnimals ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraTargetAnimals = !auraTargetAnimals; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
@@ -2310,16 +2860,19 @@ public class PypsenClient implements ClientModInitializer {
             y = section(x, y, w, "Anti-Flag", antiFlagOn, b -> { antiFlagOn = !antiFlagOn; rebuild(); }, keyAntiFlag, 12); y += 4;
 
             y = section(x, y, w, "Spider", spiderOn, b -> { spiderOn = !spiderOn; rebuild(); }, keySpider, 18);
-            addDrawableChild(cycleBtn(x, y, w, "Mode", SPIDER_MODES, spiderMode, v -> { spiderMode = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Mode", SPIDER_MODES, spiderMode, v -> { spiderMode = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Speed", 0.5f, 4f, spiderSpeed, v -> spiderSpeed = v)); y += 26;
 
             y = section(x, y, w, "NoWeb", noWebOn, b -> { noWebOn = !noWebOn; rebuild(); }, keyNoWeb, 19);
             addDrawableChild(cycleBtn(x, y, w, "Mode", NOWEB_MODES, noWebMode, v -> { noWebMode = v; rebuild(); })); y += 26;
 
             y = section(x, y, w, "Freeze", freezeOn, b -> { freezeOn = !freezeOn; rebuild(); }, keyFreeze, 20);
-            addDrawableChild(cycleBtn(x, y, w, "Mode", FREEZE_MODES, freezeMode, v -> { freezeMode = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Mode", FREEZE_MODES, freezeMode, v -> { freezeMode = v; rebuild(); })); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Visual: " + (freezeVisual ? "\u00a7aON" : "\u00a7cOFF")), b -> { freezeVisual = !freezeVisual; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "AirJump", airJumpOn, b -> { airJumpOn = !airJumpOn; rebuild(); }, keyAirJump, 25);
-            addDrawableChild(cycleBtn(x, y, w, "Mode", AIRJUMP_MODES, airJumpMode, v -> { airJumpMode = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Mode", AIRJUMP_MODES, airJumpMode, v -> { airJumpMode = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Speed", 0.5f, 4f, airJumpSpeed, v -> airJumpSpeed = v)); y += 26;
 
             y = section(x, y, w, "NoFall", noFallOn, b -> { noFallOn = !noFallOn; rebuild(); }, keyNoFall, 26);
             addDrawableChild(cycleBtn(x, y, w, "Mode", NOFALL_MODES, noFallMode, v -> { noFallMode = v; rebuild(); })); y += 26;
@@ -2336,9 +2889,24 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(cycleBtn(x, y, w, "Bypass", BYPASS_NAMES, flyBypass, v -> { flyBypass = v; rebuild(); })); y += 26;
 
             y = section(x, y, w, "XRay", xrayOn, b -> { xrayOn = !xrayOn; MinecraftClient.getInstance().worldRenderer.reload(); rebuild(); }, keyXray, 4);
+            addDrawableChild(cycleBtn(x, y, w, "Mode", XRAY_MODES, xrayMode, v -> { xrayMode = v; rebuild(); })); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Bypass", XRAY_BYPASS_MODES, xrayBypass, v -> { xrayBypass = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Far Range", 16f, 1024f, xrayRange, v -> xrayRange = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Far Scan: " + (xrayFarScan ? "\u00a7aON" : "\u00a7cOFF")), b -> { xrayFarScan = !xrayFarScan; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Anti-XRay: " + (xrayAntiXray ? "\u00a7aON" : "\u00a7cOFF")), b -> { xrayAntiXray = !xrayAntiXray; rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Select XRay Blocks..."), b -> {
                 MinecraftClient.getInstance().setScreen(new XrayScreen(this));
             }).dimensions(x, y, w, 20).build()); y += 26;
+
+            y = section(x, y, w, "Base Finder", baseFinderOn, b -> { baseFinderOn = !baseFinderOn; rebuild(); }, GLFW.GLFW_KEY_UNKNOWN, -1);
+            addDrawableChild(cycleBtn(x, y, w, "Filter", BASE_FINDER_MODES, baseFinderMode, v -> { baseFinderMode = v; rebuild(); })); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Render", BASE_FINDER_RENDERS, baseFinderRender, v -> { baseFinderRender = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Range", 16f, 1024f, baseFinderRange, v -> baseFinderRange = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Chests: " + (baseFinderChest ? "§aON" : "§cOFF")), b -> { baseFinderChest = !baseFinderChest; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Shulkers: " + (baseFinderShulker ? "§aON" : "§cOFF")), b -> { baseFinderShulker = !baseFinderShulker; rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Wood/Caves: " + (baseFinderWood ? "§aON" : "§cOFF")), b -> { baseFinderWood = !baseFinderWood; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Carpet: " + (baseFinderCarpet ? "§aON" : "§cOFF")), b -> { baseFinderCarpet = !baseFinderCarpet; rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Unusual: " + (baseFinderUnusual ? "§aON" : "§cOFF")), b -> { baseFinderUnusual = !baseFinderUnusual; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "HUD Settings", hudOn, b -> { hudOn = !hudOn; rebuild(); }, GLFW.GLFW_KEY_UNKNOWN, -1);
             addDrawableChild(ButtonWidget.builder(Text.literal("Target HUD: " + (targetHudOn ? "§aON" : "§cOFF")), b -> { targetHudOn = !targetHudOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
@@ -2346,9 +2914,10 @@ public class PypsenClient implements ClientModInitializer {
                 MinecraftClient.getInstance().setScreen(new PypsenFeatures.FeaturesScreen(this));
             }).dimensions(x, y, w, 20).build()); y += 26;
 
-            y = section(x, y, w, "Server Crasher", serverCrasherOn, b -> { serverCrasherOn = !serverCrasherOn; rebuild(); }, keyCrasher, 21);
+            y = section(x, y, w, "Server Crasher (local bench)", serverCrasherOn, b -> { serverCrasherOn = !serverCrasherOn; rebuild(); }, keyCrasher, 21);
             addDrawableChild(cycleBtn(x, y, w, "Mode", CRASHER_MODES, crasherMode, v -> { crasherMode = v; rebuild(); })); y += 22;
-            addDrawableChild(cycleBtn(x, y, w, "Timer", CRASHER_TIMERS, crasherTimerMode, v -> { crasherTimerMode = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Timer", CRASHER_TIMERS, crasherTimerMode, v -> { crasherTimerMode = v; rebuild(); })); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Visual: " + (crasherVisual ? "§aON" : "§cOFF")), b -> { crasherVisual = !crasherVisual; rebuild(); }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "GodMode", godModeOn, b -> { godModeOn = !godModeOn; rebuild(); }, keyGodMode, 22);
             addDrawableChild(cycleBtn(x, y, w, "Mode", GODMODE_MODES, godModeMode, v -> { godModeMode = v; rebuild(); })); y += 26;
@@ -2383,7 +2952,12 @@ public class PypsenClient implements ClientModInitializer {
                 MinecraftClient.getInstance().setScreen(new PypsenFeatures.FeaturesScreen(this));
             }).dimensions(x, y, w, 20).build()); y += 26;
 
-            addDrawableChild(ButtonWidget.builder(Text.literal("Drop All Items"), b -> { dropAllItems = true; }).dimensions(x, y, w, 20).build()); y += 26;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Drop All Items"), b -> { dropAllItems = true; }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Creative Drop: " + (creativeDropOn ? "§aQUEUED" : "§7READY")), b -> { creativeDropOn = true; }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(slider(x, y, w, "Drop Count", 1f, 64f, creativeDropCount, v -> creativeDropCount = v.intValue())); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Creative Duplicate: " + (creativeDupeOn ? "§aQUEUED" : "§7READY")), b -> { creativeDupeOn = true; }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Dupe", DUPE_MODES, dupeMode, v -> { dupeMode = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Copies", 1f, 20f, creativeDupeCount, v -> creativeDupeCount = v.intValue())); y += 26;
 
             addDrawableChild(ButtonWidget.builder(Text.literal("§a§lSAVE CONFIG"), b -> {
                 saveConfig();
@@ -2600,6 +3174,10 @@ public class PypsenClient implements ClientModInitializer {
                 addB(0, "Predict", auraPredict, v->auraPredict=v);
                 addB(0, "Randomize", auraRandomize, v->auraRandomize=v);
                 addC(0, "Bypass", BYPASS_NAMES, auraBypass, v->auraBypass=v);
+                addB(0, "NOT NEAR", auraNotNear, v->auraNotNear=v);
+                addS(0, "Keep Distance", 0.5f, 8f, auraNotNearRange, v->auraNotNearRange=v);
+                addB(0, "Rotation", auraRotationEnabled, v->auraRotationEnabled=v);
+                addB(0, "Strafe", auraStrafeEnabled, v->auraStrafeEnabled=v);
                 addB(0, "Target Players", auraTargetPlayers, v->auraTargetPlayers=v);
                 addB(0, "Target Mobs", auraTargetMobs, v->auraTargetMobs=v);
                 addB(0, "Target Animals", auraTargetAnimals, v->auraTargetAnimals=v);
@@ -2682,16 +3260,19 @@ public class PypsenClient implements ClientModInitializer {
             });
             addMod(1, "Spider", spiderOn, v->spiderOn=v, () -> {
                 addC(1, "Mode", SPIDER_MODES, spiderMode, v->spiderMode=v);
+                addS(1, "Speed", 0.5f, 4f, spiderSpeed, v->spiderSpeed=v);
             });
             addMod(1, "NoWeb", noWebOn, v->noWebOn=v, () -> {
                 addC(1, "Mode", NOWEB_MODES, noWebMode, v->noWebMode=v);
             });
             addMod(1, "Freeze", freezeOn, v->freezeOn=v, () -> {
                 addC(1, "Mode", FREEZE_MODES, freezeMode, v->freezeMode=v);
+                addB(1, "Visual", freezeVisual, v->freezeVisual=v);
                 addBind(1, "Bind", 20);
             });
             addMod(1, "AirJump", airJumpOn, v->airJumpOn=v, () -> {
                 addC(1, "Mode", AIRJUMP_MODES, airJumpMode, v->airJumpMode=v);
+                addS(1, "Speed", 0.5f, 4f, airJumpSpeed, v->airJumpSpeed=v);
                 addBind(1, "Bind", 25);
             });
             addMod(1, "NoFall", noFallOn, v->noFallOn=v, () -> {
@@ -2714,11 +3295,26 @@ public class PypsenClient implements ClientModInitializer {
 
             // Visuals
             addMod(2, "XRay", xrayOn, v->{xrayOn=v; if(client!=null)client.worldRenderer.reload();}, () -> {
+                addC(2, "Mode", XRAY_MODES, xrayMode, v->xrayMode=v);
+                addC(2, "Bypass", XRAY_BYPASS_MODES, xrayBypass, v->xrayBypass=v);
+                addS(2, "Far Range", 16f, 1024f, xrayRange, v->xrayRange=v);
+                addB(2, "Far Scan", xrayFarScan, v->xrayFarScan=v);
+                addB(2, "Anti-XRay", xrayAntiXray, v->xrayAntiXray=v);
                 int y = cY[2] + curY[2] + scroll[2];
                 addAt(2, y, ButtonWidget.builder(Text.literal("Select Blocks..."), b -> {
                     if(client!=null) client.setScreen(new XrayScreen(this));
                 }).dimensions(cX[2] + 5, y, 140, 20).build());
                 curY[2] += 22;
+            });
+            addMod(2, "Base Finder", baseFinderOn, v->baseFinderOn=v, () -> {
+                addC(2, "Filter", BASE_FINDER_MODES, baseFinderMode, v->baseFinderMode=v);
+                addC(2, "Render", BASE_FINDER_RENDERS, baseFinderRender, v->baseFinderRender=v);
+                addS(2, "Range", 16f, 1024f, baseFinderRange, v->baseFinderRange=v);
+                addB(2, "Chests", baseFinderChest, v->baseFinderChest=v);
+                addB(2, "Shulkers", baseFinderShulker, v->baseFinderShulker=v);
+                addB(2, "Wood/Caves", baseFinderWood, v->baseFinderWood=v);
+                addB(2, "Carpet", baseFinderCarpet, v->baseFinderCarpet=v);
+                addB(2, "Unusual", baseFinderUnusual, v->baseFinderUnusual=v);
             });
             addMod(2, "Glowing ESP", visualsOn, v->visualsOn=v, () -> {
                 addC(2, "Target", VISUALS_TARGETS, visualsTargetMode, v->visualsTargetMode=v);
@@ -2772,12 +3368,20 @@ public class PypsenClient implements ClientModInitializer {
                 addC(3, "Mode", GODMODE_MODES, godModeMode, v->godModeMode=v);
                 addBind(3, "Bind", 22);
             });
-            addMod(3, "Server Crasher", serverCrasherOn, v->serverCrasherOn=v, () -> {
+            addMod(3, "Server Crasher (local bench)", serverCrasherOn, v->serverCrasherOn=v, () -> {
                 addC(3, "Mode", CRASHER_MODES, crasherMode, v->crasherMode=v);
                 addC(3, "Timer", CRASHER_TIMERS, crasherTimerMode, v->crasherTimerMode=v);
+                addB(3, "Visual", crasherVisual, v->crasherVisual=v);
             });
             int y3 = cY[3] + curY[3] + scroll[3];
             addAt(3, y3, ButtonWidget.builder(Text.literal("Drop All Items"), b -> { dropAllItems = true; }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            y3 = cY[3] + curY[3] + scroll[3];
+            addAt(3, y3, ButtonWidget.builder(Text.literal("Creative Drop"), b -> { creativeDropOn = true; }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            addS(3, "Drop Count", 1f, 64f, creativeDropCount, v->creativeDropCount=v.intValue());
+            y3 = cY[3] + curY[3] + scroll[3];
+            addAt(3, y3, ButtonWidget.builder(Text.literal("Creative Duplicate"), b -> { creativeDupeOn = true; }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            addC(3, "Dupe", DUPE_MODES, dupeMode, v->dupeMode=v);
+            addS(3, "Copies", 1f, 20f, creativeDupeCount, v->creativeDupeCount=v.intValue());
             addMod(3, "Panic", panicOn, v->panicOn=v, null);
             y3 = cY[3] + curY[3] + scroll[3];
             addAt(3, y3, ButtonWidget.builder(Text.literal("\u00a5 Advanced Features"), b -> {

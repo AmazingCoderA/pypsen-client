@@ -20,11 +20,7 @@ public class BlockMixin {
                                     BlockPos otherPos,
                                     CallbackInfoReturnable<Boolean> cir) {
         if (PypsenClient.xrayOn) {
-            if (PypsenClient.XRAY_BLOCKS.contains(state.getBlock())) {
-                cir.setReturnValue(true);
-            } else {
-                cir.setReturnValue(false);
-            }
+            cir.setReturnValue(PypsenClient.xrayShouldDrawSide(state.getBlock(), side));
         }
     }
 }
