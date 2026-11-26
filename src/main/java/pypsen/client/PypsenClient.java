@@ -105,6 +105,14 @@ public class PypsenClient implements ClientModInitializer {
     public static int airJumpMode = 0, noFallMode = 0, velocityMode = 0, jesusMode = 0, visualsParticles = 0;
     public static float airJumpSpeed = 1f, spiderSpeed = 1f;
 
+    // ── Custom ambient / visual enhancements ──
+    public static boolean ambientOn = false, ambientRainbow = false, spinOn = false;
+    public static int ambientMode = 0, spinMode = 0;
+    public static float ambientStrength = 0.35f, ambientHue = 200f;
+    public static float spinSpeed = 1f, spinSize = 40f;
+    public static final String[] AMBIENT_MODES = {"Tint", "Fog", "Vignette", "Gradient", "Spiral"};
+    public static final String[] SPIN_MODES = {"Spin", "Reverse", "Pulse", "Helix", "Orbit"};
+
     // ── Local benchmark / creative utilities ──
     public static boolean freezeVisual = false, crasherVisual = false;
     public static boolean creativeDropOn = false, creativeDupeOn = false;
@@ -224,6 +232,10 @@ public class PypsenClient implements ClientModInitializer {
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc.player == null || panicOn) return;
 
+            // ── CUSTOM AMBIENT / FON ──
+            if (ambientOn) drawAmbient(ctx, mc);
+            if (spinOn) drawSpinEffects(ctx, mc);
+
             // ── MAIN HUD ──
             if (hudOn && PypsenFeatures.hudVisible()) {
                 List<String> lines = new ArrayList<>();
@@ -239,6 +251,10 @@ public class PypsenClient implements ClientModInitializer {
                 if (velocityOn)    lines.add("\u00a79Velocity");
                 if (aimOn)         lines.add("\u00a75AimAssist \u00a77" + String.format("%.0fm", aimRange) + " [" + AIM_MODES[MathHelper.clamp(aimMode, 0, AIM_MODES.length - 1)] + "]");
                 if (visualsOn)     lines.add("\u00a7aVisuals");
+                if (ambientOn)     lines.add("\u00a7dAmbient \u00a77" + AMBIENT_MODES[MathHelper.clamp(ambientMode, 0, AMBIENT_MODES.length - 1)]
+                        + " \u00a7e" + String.format("%.0f%%", ambientStrength * 100f));
+                if (spinOn)        lines.add("\u00a75Spins \u00a77" + SPIN_MODES[MathHelper.clamp(spinMode, 0, SPIN_MODES.length - 1)]
+                        + " \u00a7e" + String.format("%.1f", spinSpeed));
                 if (strafeOn)      lines.add("\u00a73Strafe");
                 if (noclipOn)      lines.add("\u00a78Noclip");
                 if (antiFlagOn)    lines.add("\u00a7eAnti-Flag");
@@ -371,6 +387,7 @@ public class PypsenClient implements ClientModInitializer {
                     autoTotemOn = aimLockOn = fullBrightOn = nameHiderOn = spiderOn = noWebOn = freezeOn = false;
                     jesusOn = false;
                     airJumpOn = noFallOn = serverCrasherOn = baseFinderOn = false;
+                    ambientOn = spinOn = false;
                     creativeDropOn = creativeDupeOn = false;
                     PypsenFeatures.panic();
                     mc.worldRenderer.reload();
@@ -1521,6 +1538,130 @@ public class PypsenClient implements ClientModInitializer {
         });
     }
 
+    // ══════════ CUSTOM AMBIENT / SPIN EFFECTS ══════════
+
+    private static int hsvToRgb(float h, float s, float v) {
+        h = ((h % 1f) + 1f) % 1f;
+        int i = (int) (h * 6f);
+        float f = h * 6f - i;
+        float p = v * (1f - s);
+        float q = v * (1f - f * s);
+        float t = v * (1f - (1f - f) * s);
+        float r, g, b;
+        if (i == 0) { r = v; g = t; b = p; }
+        else if (i == 1) { r = q; g = v; b = p; }
+        else if (i == 2) { r = p; g = v; b = t; }
+        else if (i == 3) { r = p; g = q; b = v; }
+        else if (i == 4) { r = t; g = p; b = v; }
+        else { r = v; g = p; b = q; }
+        return ((int) (r * 255f) << 16) | ((int) (g * 255f) << 8) | (int) (b * 255f);
+    }
+
+    private static int ambientColor() {
+        float h = ambientRainbow
+                ? ((System.currentTimeMillis() % 4000L) / 4000f)
+                : MathHelper.clamp(ambientHue, 0f, 360f) / 360f;
+        return hsvToRgb(h, 0.78f, 1f);
+    }
+
+    private static int withAlpha(int rgb, float alpha) {
+        return ((MathHelper.clamp((int) (alpha * 255f), 0, 255) & 0xFF) << 24) | (rgb & 0x00FFFFFF);
+    }
+
+    private static void drawRing(DrawContext ctx, int cx, int cy, int radius, double angle,
+                                 int rgb, float alpha) {
+        int segments = 18;
+        int dot = MathHelper.clamp(radius / 10, 2, 9);
+        for (int i = 0; i < segments; i++) {
+            double a = angle + i * (Math.PI * 2.0 / segments);
+            int x = cx + (int) Math.round(Math.cos(a) * radius);
+            int y = cy + (int) Math.round(Math.sin(a) * radius);
+            ctx.fill(x - dot, y - dot, x + dot, y + dot, withAlpha(rgb, alpha));
+        }
+    }
+
+    private static void drawAmbient(DrawContext ctx, MinecraftClient mc) {
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        float strength = MathHelper.clamp(ambientStrength, 0f, 1f);
+        int rgb = ambientColor();
+        int mode = MathHelper.clamp(ambientMode, 0, AMBIENT_MODES.length - 1);
+
+        if (mode == 0) {
+            ctx.fill(0, 0, sw, sh, withAlpha(rgb, strength * 0.45f));
+        } else if (mode == 1) {
+            int bands = 14;
+            int maxInset = Math.min(sw, sh) / 2;
+            for (int i = 0; i < bands; i++) {
+                float t = i / (float) bands;
+                int inset = (int) (maxInset * t);
+                ctx.fill(inset, inset, sw - inset, sh - inset, withAlpha(rgb, strength * 0.11f * (1f - t)));
+            }
+        } else if (mode == 2) {
+            int step = Math.max(2, Math.min(sw, sh) / 80);
+            for (int i = 0; i < 12; i++) {
+                int inset = i * step;
+                int a = withAlpha(0x000000, strength * 0.22f * (1f - i / 12f));
+                ctx.fill(inset, inset, sw - inset, inset + 2, a);
+                ctx.fill(inset, sh - inset - 2, sw - inset, sh - inset, a);
+                ctx.fill(inset, inset, inset + 2, sh - inset, a);
+                ctx.fill(sw - inset - 2, inset, sw - inset, sh - inset, a);
+            }
+        } else if (mode == 3) {
+            for (int i = 0; i < 16; i++) {
+                int y0 = sh * i / 16;
+                int y1 = sh * (i + 1) / 16;
+                ctx.fill(0, y0, sw, y1, withAlpha(rgb, strength * 0.32f * (i / 15f)));
+            }
+        } else {
+            drawRing(ctx, sw / 2, sh / 2, Math.min(sw, sh) / 3, clientTick * 0.035, rgb, strength * 0.5f);
+            drawRing(ctx, sw / 2, sh / 2, Math.min(sw, sh) / 5, -clientTick * 0.05, rgb, strength * 0.35f);
+        }
+    }
+
+    private static void drawSpinEffects(DrawContext ctx, MinecraftClient mc) {
+        int sw = mc.getWindow().getScaledWidth();
+        int sh = mc.getWindow().getScaledHeight();
+        int rgb = ambientColor();
+        int mode = MathHelper.clamp(spinMode, 0, SPIN_MODES.length - 1);
+        float speed = MathHelper.clamp(spinSpeed, 0f, 8f);
+        int radius = (int) MathHelper.clamp(spinSize, 12f, 160f);
+        double angle = clientTick * 0.045 * speed;
+
+        if (mode == 4) {
+            drawRing(ctx, sw / 2, sh / 2, radius, angle, rgb, 0.65f);
+            drawRing(ctx, sw / 2, sh / 2, radius / 2, -angle * 1.4, rgb, 0.45f);
+        } else if (mode == 3) {
+            for (int i = 0; i < 3; i++) {
+                drawRing(ctx, sw / 2, sh / 2, Math.max(12, radius - i * 10), angle + i * 0.8, rgb, 0.7f - i * 0.18f);
+            }
+        } else if (mode == 2) {
+            int pulse = (int) (radius * (0.7 + 0.3 * Math.sin(clientTick * 0.12)));
+            drawRing(ctx, sw / 2, sh / 2, pulse, angle, rgb, 0.7f);
+        } else {
+            drawRing(ctx, sw / 2, sh / 2, radius, mode == 1 ? -angle : angle, rgb, 0.7f);
+        }
+
+        if (mc.world != null && currentTarget != null && currentTarget.isAlive()) {
+            Camera camera = mc.gameRenderer.getCamera();
+            if (camera.isReady()) {
+                Vec3d camPos = camera.getPos();
+                org.joml.Vector3f right = camera.getDiagonalPlane();
+                org.joml.Vector3f up = camera.getVerticalPlane();
+                org.joml.Vector3f forward = camera.getHorizontalPlane();
+                double fov = mc.options.getFov().getValue().floatValue();
+                double focal = (sh * 0.5) / Math.tan(Math.toRadians(fov) * 0.5);
+                if (Double.isFinite(focal) && focal > 0) {
+                    float[] s = projectToScreen(new Vec3d(currentTarget.getX(), currentTarget.getY() + currentTarget.getHeight() * 0.5,
+                            currentTarget.getZ()), camPos, right, up, forward, focal, sw, sh);
+                    if (s != null) {
+                        drawRing(ctx, (int) s[0], (int) s[1], Math.max(14, radius / 2), -angle * 0.7, rgb, 0.55f);
+                    }
+                }
+            }
+        }
+    }
+
     // ══════════ XRAY / BASE FINDER / LOCAL UTILITIES ══════════
 
     private static String blockName(Block block) {
@@ -2292,6 +2433,15 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("jesusOn=" + jesusOn + "\n");
             writer.write("jesusMode=" + jesusMode + "\n");
             writer.write("visualsParticles=" + visualsParticles + "\n");
+            writer.write("ambientOn=" + ambientOn + "\n");
+            writer.write("ambientRainbow=" + ambientRainbow + "\n");
+            writer.write("ambientMode=" + ambientMode + "\n");
+            writer.write("ambientStrength=" + ambientStrength + "\n");
+            writer.write("ambientHue=" + ambientHue + "\n");
+            writer.write("spinOn=" + spinOn + "\n");
+            writer.write("spinMode=" + spinMode + "\n");
+            writer.write("spinSpeed=" + spinSpeed + "\n");
+            writer.write("spinSize=" + spinSize + "\n");
             writer.write("waterCrits=" + waterCrits + "\n");
             writer.write("crasherTimerMode=" + crasherTimerMode + "\n");
             writer.write("crasherMode=" + crasherMode + "\n");
@@ -2455,6 +2605,15 @@ public class PypsenClient implements ClientModInitializer {
                     case "jesusOn" -> jesusOn = Boolean.parseBoolean(val);
                     case "jesusMode" -> jesusMode = Integer.parseInt(val);
                     case "visualsParticles" -> visualsParticles = Integer.parseInt(val);
+                    case "ambientOn" -> ambientOn = Boolean.parseBoolean(val);
+                    case "ambientRainbow" -> ambientRainbow = Boolean.parseBoolean(val);
+                    case "ambientMode" -> ambientMode = Integer.parseInt(val);
+                    case "ambientStrength" -> ambientStrength = Float.parseFloat(val);
+                    case "ambientHue" -> ambientHue = Float.parseFloat(val);
+                    case "spinOn" -> spinOn = Boolean.parseBoolean(val);
+                    case "spinMode" -> spinMode = Integer.parseInt(val);
+                    case "spinSpeed" -> spinSpeed = Float.parseFloat(val);
+                    case "spinSize" -> spinSize = Float.parseFloat(val);
                     case "waterCrits" -> waterCrits = Boolean.parseBoolean(val);
                     case "crasherTimerMode" -> crasherTimerMode = Integer.parseInt(val);
                     case "crasherMode" -> crasherMode = Integer.parseInt(val);
@@ -2557,6 +2716,12 @@ public class PypsenClient implements ClientModInitializer {
             velocityMode = MathHelper.clamp(velocityMode, 0, VELOCITY_MODES.length - 1);
             jesusMode = MathHelper.clamp(jesusMode, 0, JESUS_MODES.length - 1);
             visualsParticles = MathHelper.clamp(visualsParticles, 0, PARTICLES_MODES.length - 1);
+            ambientMode = MathHelper.clamp(ambientMode, 0, AMBIENT_MODES.length - 1);
+            ambientStrength = MathHelper.clamp(ambientStrength, 0f, 1f);
+            ambientHue = MathHelper.clamp(ambientHue, 0f, 360f);
+            spinMode = MathHelper.clamp(spinMode, 0, SPIN_MODES.length - 1);
+            spinSpeed = MathHelper.clamp(spinSpeed, 0f, 8f);
+            spinSize = MathHelper.clamp(spinSize, 12f, 160f);
             godModeMode = MathHelper.clamp(godModeMode, 0, GODMODE_MODES.length - 1);
             noWebMode = MathHelper.clamp(noWebMode, 0, NOWEB_MODES.length - 1);
             noclipBypass = MathHelper.clamp(noclipBypass, 0, NOCLIP_MODES.length - 1);
@@ -2770,6 +2935,15 @@ public class PypsenClient implements ClientModInitializer {
             y = section(x, y, w, "Visuals (ESP)", visualsOn, b -> { visualsOn = !visualsOn; rebuild(); }, keyVisuals, 8);
             addDrawableChild(cycleBtn(x, y, w, "Target", VISUALS_TARGETS, visualsTargetMode, v -> { visualsTargetMode = v; rebuild(); })); y += 22;
             addDrawableChild(cycleBtn(x, y, w, "Particles", PARTICLES_MODES, visualsParticles, v -> { visualsParticles = v; rebuild(); })); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Custom Ambient: " + (ambientOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { ambientOn = !ambientOn; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Rainbow: " + (ambientRainbow ? "\u00a7aON" : "\u00a7cOFF")), b -> { ambientRainbow = !ambientRainbow; rebuild(); }).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Ambient Mode", AMBIENT_MODES, ambientMode, v -> { ambientMode = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Ambient Strength", 0f, 1f, ambientStrength, v -> ambientStrength = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Ambient Hue", 0f, 360f, ambientHue, v -> ambientHue = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Spins: " + (spinOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { spinOn = !spinOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Spin Mode", SPIN_MODES, spinMode, v -> { spinMode = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Spin Speed", 0f, 8f, spinSpeed, v -> spinSpeed = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Spin Size", 12f, 160f, spinSize, v -> spinSize = v)); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Player ESP (Tags): " + (playerEspOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { playerEspOn = !playerEspOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("FullBright: " + (fullBrightOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { fullBrightOn = !fullBrightOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("NameHider (Record): " + (nameHiderOn ? "\u00a7aON" : "\u00a7cOFF")), b -> { nameHiderOn = !nameHiderOn; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
@@ -3337,6 +3511,17 @@ public class PypsenClient implements ClientModInitializer {
             addMod(2, "Target HUD", targetHudOn, v->targetHudOn=v, null);
             addMod(2, "Player ESP", playerEspOn, v->playerEspOn=v, null);
             addMod(2, "FullBright", fullBrightOn, v->fullBrightOn=v, null);
+            addMod(2, "Ambient", ambientOn, v->ambientOn=v, () -> {
+                addB(2, "Rainbow", ambientRainbow, v->ambientRainbow=v);
+                addC(2, "Mode", AMBIENT_MODES, ambientMode, v->ambientMode=v);
+                addS(2, "Strength", 0f, 1f, ambientStrength, v->ambientStrength=v);
+                addS(2, "Hue", 0f, 360f, ambientHue, v->ambientHue=v);
+            });
+            addMod(2, "Spins", spinOn, v->spinOn=v, () -> {
+                addC(2, "Mode", SPIN_MODES, spinMode, v->spinMode=v);
+                addS(2, "Speed", 0f, 8f, spinSpeed, v->spinSpeed=v);
+                addS(2, "Size", 12f, 160f, spinSize, v->spinSize=v);
+            });
             addMod(2, "NameHider", nameHiderOn, v->nameHiderOn=v, null);
             addMod(2, "See Invis", seeInvisOn, v->seeInvisOn=v, null);
             addMod(2, "Target ESP", targetEspOn, v->targetEspOn=v, null);
