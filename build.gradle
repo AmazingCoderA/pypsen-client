@@ -109,7 +109,8 @@ static String transformForModern(String src) {
 	s = s.replaceAll('p\\.getInventory\\(\\)\\.getArmorStack\\(type\\)', 'Compat.armorStack(p, type)')
 	s = s.replaceAll('p\\.resetLastAttackedTicks\\(\\)', 'p.resetTicksSinceLastAttack()')
 	s = s.replaceAll('p\\.input\\.movementForward', 'Compat.moveForward(p)')
-	s = s.replaceAll('p\\.input\\.movementSideways', 'Compat.moveSideways(p)')
+	// Mojang input is D-positive; the shared source expects Yarn A-positive.
+	s = s.replaceAll('p\\.input\\.movementSideways', '-Compat.moveSideways(p)')
 
 	// Packet constructor changes.
 	s = insertArg(s, 'new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(', 'false')
@@ -278,7 +279,10 @@ static String transformFor26(String src) {
 		'interactionManager': 'gameMode',
 		'jumpKey'           : 'keyJump',
 		'textRenderer'      : 'font',
-		'noClip'            : 'noPhysics'
+		'noClip'            : 'noPhysics',
+		'allowFlying'       : 'mayfly',
+		'creativeMode'      : 'instabuild',
+		'allowModifyWorld'  : 'mayBuild'
 	]
 	yarnToMojang.each { from, to ->
 		s = s.replaceAll('\\.' + from + '\\b', '.' + to)

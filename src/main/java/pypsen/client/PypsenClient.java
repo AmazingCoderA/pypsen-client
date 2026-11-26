@@ -163,6 +163,9 @@ public class PypsenClient implements ClientModInitializer {
     // ── Editable bypass list / account switcher ──
     public static final List<String> customBypassNames = new ArrayList<>();
     public static float flyCustomVertical = -0.01f, flyCustomPulse = 0f, spiderCustomPulse = 0f;
+    public static boolean flyCreativeMimic = false;
+    private static boolean flyMimicApplied = false;
+    private static boolean flyMimicPrevAllowFlying = false, flyMimicPrevCreative = false, flyMimicPrevModifyWorld = false;
     public static final List<String> accountNames = new ArrayList<>();
     public static int selectedAccount = 0;
     public static String accountStatus = "";
@@ -264,11 +267,13 @@ public class PypsenClient implements ClientModInitializer {
             if (hudOn && PypsenFeatures.hudVisible()) {
                 List<String> lines = new ArrayList<>();
                 lines.add("\u00a7a\u00a7lPypsen v2 \u00a77[PRO]");
-                if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + BYPASS_NAMES[MathHelper.clamp(speedBypass, 0, BYPASS_NAMES.length - 1)] + "]");
-                if (auraOn)        lines.add("\u00a7cKillAura \u00a77" + String.format("%.1f", auraRange) + " [" + BYPASS_NAMES[MathHelper.clamp(auraBypass, 0, BYPASS_NAMES.length - 1)] + "]"
+                String[] hudBypasses = allBypassNames();
+                if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + hudBypasses[MathHelper.clamp(speedBypass, 0, hudBypasses.length - 1)] + "]");
+                if (auraOn)        lines.add("\u00a7cKillAura \u00a77" + String.format("%.1f", auraRange) + " [" + hudBypasses[MathHelper.clamp(auraBypass, 0, hudBypasses.length - 1)] + "]"
                         + (auraNotNear ? " \u00a7eNOT NEAR " + String.format("%.1f", auraNotNearRange) + "m" : ""));
                 if (hitboxOn)      lines.add("\u00a7eHitbox \u00a77" + String.format("%.1f", hitboxVal));
-                if (flyOn)         lines.add("\u00a7dFly \u00a77" + String.format("%.1f", flySpeed) + " [" + BYPASS_NAMES[MathHelper.clamp(flyBypass, 0, BYPASS_NAMES.length - 1)] + "]");
+                if (flyOn)         lines.add("\u00a7dFly \u00a77" + String.format("%.1f", flySpeed) + " [" + hudBypasses[MathHelper.clamp(flyBypass, 0, hudBypasses.length - 1)] + "]"
+                        + (flyCreativeMimic ? " \u00a7aMIMIC" : ""));
                 if (xrayOn && xrayStealth == 0) lines.add("\u00a76XRay \u00a77[" + XRAY_MODES[MathHelper.clamp(xrayMode, 0, XRAY_MODES.length - 1)] + "]"
                         + (xrayFarScan ? " \u00a7e" + String.format("%.0fm", xrayRange) : ""));
                 if (baseFinderOn)  lines.add("\u00a7aBase Finder \u00a77" + BASE_FINDER_MODES[MathHelper.clamp(baseFinderMode, 0, BASE_FINDER_MODES.length - 1)] + " \u00a7e" + String.format("%.0fm", baseFinderRange));
@@ -414,6 +419,7 @@ public class PypsenClient implements ClientModInitializer {
                     airJumpOn = noFallOn = serverCrasherOn = baseFinderOn = false;
                     ambientOn = spinOn = false;
                     creativeDropOn = creativeDupeOn = false;
+                    flyCreativeMimic = false;
                     PypsenFeatures.panic();
                     mc.worldRenderer.reload();
                 }
@@ -830,16 +836,8 @@ public class PypsenClient implements ClientModInitializer {
                 double vy = 0;
                 if (mc.options.jumpKey.isPressed()) vy = 0.5;
                 if (mc.options.sneakKey.isPressed()) vy = -0.5;
-                float fw = p.input.movementForward;
-                float st = p.input.movementSideways;
-                double vx = 0, vz = 0;
-                if (fw != 0 || st != 0) {
-                    double yaw = Math.toRadians(p.getYaw());
-                    double angle = yaw - Math.atan2(fw, st) + Math.PI / 2;
-                    vx = -Math.sin(angle) * 0.5;
-                    vz = Math.cos(angle) * 0.5;
-                }
-                p.setVelocity(vx, vy, vz);
+                Vec3d move = inputMoveVec(p, 0.5);
+                p.setVelocity(move.x, vy, move.z);
             }
 
             // ── SERVER CRASHER ──
@@ -1142,23 +1140,18 @@ public class PypsenClient implements ClientModInitializer {
             if (strafeOn && mc.currentScreen == null) {
                 if (p.input.movementForward != 0 || p.input.movementSideways != 0) {
                     if (p.isOnGround()) p.jump();
-                    double yaw = Math.toRadians(p.getYaw());
-                    double angle = yaw - Math.atan2(p.input.movementForward, p.input.movementSideways) + Math.PI / 2;
-                    double spd = 0.26;
-                    p.setVelocity(-Math.sin(angle) * spd, p.getVelocity().y, Math.cos(angle) * spd);
+                    Vec3d move = inputMoveVec(p, 0.26);
+                    p.setVelocity(move.x, p.getVelocity().y, move.z);
                 }
             }
 
             // ── SPEED ──
             if (speedOn && mc.currentScreen == null && !strafeOn) {
-                float fw = p.input.movementForward;
-                float st = p.input.movementSideways;
-                if (fw != 0 || st != 0) {
-                    double yaw   = Math.toRadians(p.getYaw());
-                    double spd   = speedVal / 20.0;
-                    double angle = yaw - Math.atan2(fw, st) + Math.PI / 2;
-                    double vx = -Math.sin(angle) * spd;
-                    double vz =  Math.cos(angle) * spd;
+                if (p.input.movementForward != 0 || p.input.movementSideways != 0) {
+                    double spd = speedVal / 20.0;
+                    Vec3d move = inputMoveVec(p, spd);
+                    double vx = move.x;
+                    double vz = move.z;
 
                     switch (speedBypass) {
                         case 4 -> { // NCP
@@ -1170,24 +1163,24 @@ public class PypsenClient implements ClientModInitializer {
                             vx *= 1.01; vz *= 1.01;
                         }
                         case 6 -> { // Grim
-                            spd = 0.28;
-                            vx = -Math.sin(angle) * spd; vz = Math.cos(angle) * spd;
+                            Vec3d grim = inputMoveVec(p, 0.28);
+                            vx = grim.x; vz = grim.z;
                         }
                         case 7 -> { // Funtime
                             if (p.isOnGround()) p.jump();
                             vx *= 1.005; vz *= 1.005;
                         }
                         case 8 -> { // ReallyWorld
-                            spd = 0.26;
-                            vx = -Math.sin(angle) * spd; vz = Math.cos(angle) * spd;
+                            Vec3d rw = inputMoveVec(p, 0.26);
+                            vx = rw.x; vz = rw.z;
                         }
                         case 9 -> { // Vulcan
                             if (p.isOnGround()) p.jump();
                             if (p.age % 2 == 0) { vx *= 1.01; vz *= 1.01; }
                         }
                         case 10 -> { // Spartan
-                            spd = 0.25;
-                            vx = -Math.sin(angle) * spd; vz = Math.cos(angle) * spd;
+                            Vec3d spartan = inputMoveVec(p, 0.25);
+                            vx = spartan.x; vz = spartan.z;
                         }
                     }
                     p.setVelocity(vx, p.getVelocity().y, vz);
@@ -1197,22 +1190,14 @@ public class PypsenClient implements ClientModInitializer {
             // ── FLY ──
             if (flyOn) {
                 p.getAbilities().flying = true;
+                applyFlyCreativeMimic(p, flyCreativeMimic);
                 double vy = 0;
                 if (mc.options.jumpKey.isPressed())   vy =  flySpeed / 10.0;
                 if (mc.options.sneakKey.isPressed())   vy = -flySpeed / 10.0;
 
-                float fw = p.input.movementForward;
-                float st = p.input.movementSideways;
-                double vx = p.getVelocity().x;
-                double vz = p.getVelocity().z;
-
-                if (fw != 0 || st != 0) {
-                    double yaw   = Math.toRadians(p.getYaw());
-                    double spd   = flySpeed / 20.0;
-                    double angle = yaw - Math.atan2(fw, st) + Math.PI / 2;
-                    vx = -Math.sin(angle) * spd;
-                    vz =  Math.cos(angle) * spd;
-                } else { vx = 0; vz = 0; }
+                Vec3d move = inputMoveVec(p, flySpeed / 20.0);
+                double vx = move.x;
+                double vz = move.z;
 
                 switch (flyBypass) {
                     case 4 -> vy = -0.04; // NCP
@@ -1262,6 +1247,7 @@ public class PypsenClient implements ClientModInitializer {
                 if (flyBypass >= BYPASS_NAMES.length) vy = flyCustomVertical + Math.sin(p.age * 0.1) * flyCustomPulse;
                 p.setVelocity(vx, vy, vz);
             } else {
+                applyFlyCreativeMimic(p, false);
                 if (mc.player != null && !mc.player.isCreative() && !mc.player.isSpectator()) {
                     mc.player.getAbilities().flying = false;
                 }
@@ -1979,17 +1965,49 @@ public class PypsenClient implements ClientModInitializer {
         if (customBypassNames.remove(name)) saveConfig();
     }
 
+    /**
+     * Normalized input vector. Yarn reports A as +1 and D as -1 on 1.20.1,
+     * while the modern Mojang input reports D as +1. The build transform
+     * negates Compat.moveSideways, so this one formula behaves identically
+     * on every target: A strafes left, D strafes right, W/S stay unchanged.
+     */
+    private static Vec3d inputMoveVec(net.minecraft.client.network.ClientPlayerEntity p, double speed) {
+        double yaw = Math.toRadians(p.getYaw());
+        float fw = p.input.movementForward;
+        float st = p.input.movementSideways;
+        double vx = (Math.cos(yaw) * st - Math.sin(yaw) * fw) * speed;
+        double vz = (Math.sin(yaw) * st + Math.cos(yaw) * fw) * speed;
+        return new Vec3d(vx, 0, vz);
+    }
+
+    /** Local-only creative-ability mimic. No packets, no launcher/token access. */
+    private static void applyFlyCreativeMimic(net.minecraft.client.network.ClientPlayerEntity p, boolean active) {
+        if (active && !p.isCreative() && !p.isSpectator()) {
+            if (!flyMimicApplied) {
+                flyMimicPrevAllowFlying = p.getAbilities().allowFlying;
+                flyMimicPrevCreative = p.getAbilities().creativeMode;
+                flyMimicPrevModifyWorld = p.getAbilities().allowModifyWorld;
+                flyMimicApplied = true;
+            }
+            p.getAbilities().flying = true;
+            p.getAbilities().allowFlying = true;
+            p.getAbilities().creativeMode = true;
+            p.getAbilities().allowModifyWorld = true;
+        } else if (flyMimicApplied) {
+            p.getAbilities().allowFlying = flyMimicPrevAllowFlying;
+            p.getAbilities().creativeMode = flyMimicPrevCreative;
+            p.getAbilities().allowModifyWorld = flyMimicPrevModifyWorld;
+            flyMimicApplied = false;
+        }
+    }
+
     private static Vec3d noclipMoveDelta(net.minecraft.client.network.ClientPlayerEntity p, double step) {
         MinecraftClient mc = MinecraftClient.getInstance();
         double yaw = Math.toRadians(p.getYaw());
         double dx = 0, dy = 0, dz = 0;
-        float fw = p.input.movementForward;
-        float st = p.input.movementSideways;
-        if (fw != 0 || st != 0) {
-            double angle = yaw - Math.atan2(fw, st) + Math.PI / 2;
-            dx = -Math.sin(angle) * step;
-            dz = Math.cos(angle) * step;
-        }
+        Vec3d input = inputMoveVec(p, step);
+        dx = input.x;
+        dz = input.z;
         if (mc.options.jumpKey.isPressed()) dy += step;
         if (mc.options.sneakKey.isPressed()) dy -= step;
 
@@ -1998,8 +2016,8 @@ public class PypsenClient implements ClientModInitializer {
         if (dir == 2 || dir == 8) return new Vec3d(0, -step, 0);
         if (dir == 3) return new Vec3d(-Math.sin(yaw) * step, 0, Math.cos(yaw) * step);
         if (dir == 4) return new Vec3d(Math.sin(yaw) * step, 0, -Math.cos(yaw) * step);
-        if (dir == 5) return new Vec3d(-Math.cos(yaw) * step, 0, -Math.sin(yaw) * step);
-        if (dir == 6) return new Vec3d(Math.cos(yaw) * step, 0, Math.sin(yaw) * step);
+        if (dir == 5) return new Vec3d(Math.cos(yaw) * step, 0, Math.sin(yaw) * step);
+        if (dir == 6) return new Vec3d(-Math.cos(yaw) * step, 0, -Math.sin(yaw) * step);
         return new Vec3d(dx, dy, dz);
     }
 
@@ -2745,6 +2763,7 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("xrayHighlight=" + xrayHighlight + "\n");
             writer.write("flyCustomVertical=" + flyCustomVertical + "\n");
             writer.write("flyCustomPulse=" + flyCustomPulse + "\n");
+            writer.write("flyCreativeMimic=" + flyCreativeMimic + "\n");
             writer.write("spiderCustomPulse=" + spiderCustomPulse + "\n");
             for (String name : customBypassNames) writer.write("customBypass=" + sanitizeEntry(name) + "\n");
             writer.write("selectedAccount=" + selectedAccount + "\n");
@@ -2933,6 +2952,7 @@ public class PypsenClient implements ClientModInitializer {
                     case "xrayHighlight" -> xrayHighlight = Boolean.parseBoolean(val);
                     case "flyCustomVertical" -> flyCustomVertical = Float.parseFloat(val);
                     case "flyCustomPulse" -> flyCustomPulse = Float.parseFloat(val);
+                    case "flyCreativeMimic" -> flyCreativeMimic = Boolean.parseBoolean(val);
                     case "spiderCustomPulse" -> spiderCustomPulse = Float.parseFloat(val);
                     case "customBypass" -> {
                         String name = sanitizeEntry(val);
@@ -3567,7 +3587,10 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(slider(x, y, w, "Fly Speed", 0.1f, 50f, flySpeed, v -> flySpeed = v)); y += 22;
             addDrawableChild(cycleBtn(x, y, w, "Bypass", allBypassNames(), flyBypass, v -> { flyBypass = v; rebuild(); })); y += 22;
             addDrawableChild(slider(x, y, w, "Custom Vertical", -1f, 1f, flyCustomVertical, v -> flyCustomVertical = v)); y += 22;
-            addDrawableChild(slider(x, y, w, "Custom Pulse", 0f, 1f, flyCustomPulse, v -> flyCustomPulse = v)); y += 26;
+            addDrawableChild(slider(x, y, w, "Custom Pulse", 0f, 1f, flyCustomPulse, v -> flyCustomPulse = v)); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Creative Mimic: " + (flyCreativeMimic ? "§aON" : "§cOFF")), b -> {
+                flyCreativeMimic = !flyCreativeMimic; rebuild();
+            }).dimensions(x, y, w, 20).build()); y += 26;
 
             y = section(x, y, w, "XRay", xrayOn, b -> { xrayOn = !xrayOn; MinecraftClient.getInstance().worldRenderer.reload(); rebuild(); }, keyXray, 4);
             addDrawableChild(cycleBtn(x, y, w, "Mode", XRAY_MODES, xrayMode, v -> { xrayMode = v; rebuild(); })); y += 22;
@@ -3949,6 +3972,7 @@ public class PypsenClient implements ClientModInitializer {
                 addC(1, "Bypass", allBypassNames(), flyBypass, v->flyBypass=v);
                 addS(1, "Custom Vert", -1f, 1f, flyCustomVertical, v->flyCustomVertical=v);
                 addS(1, "Custom Pulse", 0f, 1f, flyCustomPulse, v->flyCustomPulse=v);
+                addB(1, "Creative Mimic", flyCreativeMimic, v->flyCreativeMimic=v);
             });
             addMod(1, "Spider", spiderOn, v->spiderOn=v, () -> {
                 addC(1, "Mode", allSpiderModes(), spiderMode, v->spiderMode=v);
