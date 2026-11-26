@@ -128,7 +128,7 @@ public class PypsenClient implements ClientModInitializer {
     public static boolean freezeVisual = false, crasherVisual = false;
     public static boolean creativeDropOn = false, creativeDupeOn = false;
     public static int creativeDropCount = 1, creativeDupeCount = 1, dupeMode = 0;
-    public static final String[] DUPE_MODES = {"Inventory Clone", "Stack Split", "Armor Clone"};
+    public static final String[] DUPE_MODES = {"Inventory Clone", "Stack Split", "Armor Clone", "Selected Item", "Held Stack Split", "Hotbar Copy"};
     public static double crasherScore = 0.0;
     public static final String[] AIRJUMP_MODES = {"Vanilla", "GhostBlock", "Packet", "Real Blocks", "Silent Real"};
     public static final String[] NOFALL_MODES = {"Packet", "WaterBucket", "Web", "Vulcan", "Grim", "LiquidBounce", "Matrix", "NCP", "Matrix Plus"};
@@ -142,7 +142,8 @@ public class PypsenClient implements ClientModInitializer {
     public static final String[] AURA_PARTS = {"Head", "Chest", "Legs", "Feet"};
     public static final String[] VISUALS_TARGETS = {"All", "Enemies", "Friends"};
     public static final String[] TOTEM_MODES = {"Instant", "Legit"};
-    public static final String[] SPIDER_MODES = {"Vanilla", "Jump", "Grim", "GhostBlock", "Bypass Plus", "Turbo Plus", "Turbo Max", "Silent Climb"};
+    public static final String[] SPIDER_MODES = {"Vanilla", "Jump", "Grim", "GhostBlock", "Bypass Plus", "Turbo Plus", "Turbo Max", "Silent Climb",
+            "Quantum", "Nebula", "Zenith", "Aero", "Pulse", "Drift", "Phantom", "Orbit", "Tunnel", "Void", "Nova", "Aurora", "Hyper", "Silent V2", "Perk"};
     public static final String[] NOWEB_MODES = {"Vanilla", "Fast", "Grim", "Intave", "EdgeTP"};
     public static final String[] FREEZE_MODES = {"Vanilla", "Packet", "Intave", "GhostBlock", "LiquidBounce", "Smooth Lock", "Silent Lock", "Hard Lock"};
     // Local benchmark/dry-run only: these modes never send packets to a server.
@@ -152,8 +153,19 @@ public class PypsenClient implements ClientModInitializer {
     public static int godModeMode = 0;
 
     public static int speedBypass = 0, auraBypass = 0, flyBypass = 0, noclipBypass = 0;
-    public static final String[] BYPASS_NAMES = {"None", "Vanilla", "Timer", "Strafe", "NCP", "Matrix", "Grim", "Funtime", "ReallyWorld", "Vulcan", "Spartan", "Grim AC", "Polar AC", "Intave", "Hyper", "NCP+", "Grim+", "Intave+", "Vulcan+", "Matrix+", "Polar+"};
-    public static final String[] NOCLIP_MODES = {"Vanilla", "VClip", "HClip", "Packet", "Phantom Step", "Ghost VClip"};
+    public static final String[] BYPASS_NAMES = {"None", "Vanilla", "Timer", "Strafe", "NCP", "Matrix", "Grim", "Funtime", "ReallyWorld", "Vulcan", "Spartan", "Grim AC", "Polar AC", "Intave", "Hyper", "NCP+", "Grim+", "Intave+", "Vulcan+", "Matrix+", "Polar+",
+            "Quantum", "Nebula", "Zenith", "Aero", "Pulse", "Drift", "Skywalker", "Phantom", "Silent Sky", "Turbo Sky", "Orbit", "Glide", "Matrix V2", "AAC+", "Spartan+", "Polar V2", "Intave V2", "Grim V2", "Hyper V2", "Vanilla Air", "Smooth Fly", "Step Fly", "Guard", "Nova", "Aurora"};
+    public static final String[] NOCLIP_MODES = {"Vanilla", "VClip", "HClip", "Packet", "Phantom Step", "Ghost VClip", "Perk", "Side Step", "Sky Lift", "Silent Axis", "Smart Glide", "Matrix Steps", "Vulcan Glide", "Intave Drift", "Polar Hop", "Hyper Step", "No Fall Down", "Soft Slide", "Quantum", "Nebula", "Zenith", "Aero", "Pulse", "Drift", "Phantom", "Orbit", "Tunnel", "Ghost Lift", "Void Step", "Rapid V", "Nova", "Aurora"};
+    public static final String[] NOCLIP_DIRECTIONS = {"Smart", "Up", "Down", "Forward", "Back", "Left", "Right", "Jump Up", "Sneak Down"};
+    public static float noclipStep = 0.5f;
+    public static int noclipDirection = 0;
+
+    // ── Editable bypass list / account switcher ──
+    public static final List<String> customBypassNames = new ArrayList<>();
+    public static float flyCustomVertical = -0.01f, flyCustomPulse = 0f, spiderCustomPulse = 0f;
+    public static final List<String> accountNames = new ArrayList<>();
+    public static int selectedAccount = 0;
+    public static String accountStatus = "";
 
     // ══════════ KEYBINDS ══════════
     public static int keyMenu = GLFW.GLFW_KEY_MINUS, keySpeed = GLFW.GLFW_KEY_V, keyAura = GLFW.GLFW_KEY_R;
@@ -646,6 +658,31 @@ public class PypsenClient implements ClientModInitializer {
                     Vec3d v = p.getVelocity();
                     p.setVelocity(v.x * 1.12f * spd, 0.34f * spd, v.z * 1.12f * spd);
                     p.fallDistance = 0;
+                } else if (spiderMode >= SPIDER_MODES.length) {
+                    Vec3d v = p.getVelocity();
+                    float wave = 0.22f + (float)(Math.sin(p.age * 0.12) * spiderCustomPulse * 0.12f);
+                    p.setVelocity(v.x * 1.08f, wave * spd, v.z * 1.08f);
+                    p.fallDistance = 0;
+                } else {
+                    Vec3d v = p.getVelocity();
+                    float climb;
+                    if (spiderMode == 6) climb = 0.24f; // Quantum
+                    else if (spiderMode == 7) climb = p.age % 3 == 0 ? 0.34f : 0.14f; // Nebula
+                    else if (spiderMode == 8) climb = 0.3f; // Zenith
+                    else if (spiderMode == 9) climb = 0.18f + (p.age % 4 == 0 ? 0.15f : 0); // Aero
+                    else if (spiderMode == 10) climb = 0.28f + (float)(Math.sin(p.age * 0.2) * 0.06f); // Pulse
+                    else if (spiderMode == 11) climb = 0.2f; // Drift
+                    else if (spiderMode == 12) climb = 0.4f; // Phantom
+                    else if (spiderMode == 13) climb = 0.26f; // Orbit
+                    else if (spiderMode == 14) climb = 0.22f; // Tunnel
+                    else if (spiderMode == 15) climb = 0.36f; // Void
+                    else if (spiderMode == 16) climb = 0.3f; // Nova
+                    else if (spiderMode == 17) climb = 0.19f; // Aurora
+                    else if (spiderMode == 18) climb = 0.32f; // Hyper
+                    else if (spiderMode == 19) climb = 0.25f; // Silent V2
+                    else climb = 0.29f; // Perk
+                    p.setVelocity(v.x * 1.06f, climb * spd, v.z * 1.06f);
+                    p.fallDistance = 0;
                 }
             }
 
@@ -735,19 +772,50 @@ public class PypsenClient implements ClientModInitializer {
 
             // ── NOCLIP ──
             if (noclipOn) {
-                if (noclipBypass == 0) { // Vanilla
-                    p.noClip = true;
-                    p.fallDistance = 0;
-                } else if (noclipBypass == 1) { // VClip (Vertical teleport)
-                    if (mc.options.jumpKey.isPressed()) p.setPosition(p.getX(), p.getY() + 0.5, p.getZ());
-                    if (mc.options.sneakKey.isPressed()) p.setPosition(p.getX(), p.getY() - 0.5, p.getZ());
-                } else if (noclipBypass == 2) { // HClip (Horizontal teleport)
-                    Vec3d forward = p.getRotationVec(1.0f).multiply(0.5);
-                    p.setPosition(p.getX() + forward.x, p.getY(), p.getZ() + forward.z);
-                } else if (noclipBypass == 3) { // Packet (Desync)
-                    p.noClip = true;
-                    if (p.age % 2 == 0) {
-                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(p.getX(), p.getY() - 0.01, p.getZ(), false));
+                p.noClip = true;
+                p.fallDistance = 0;
+                double step = MathHelper.clamp(noclipStep, 0.05f, 4f);
+                Vec3d delta = noclipMoveDelta(p, step);
+                if (noclipBypass == 0) { // Vanilla: full 3-axis movement
+                    p.setVelocity(delta.x, delta.y, delta.z);
+                } else if (noclipBypass == 1) { // VClip: vertical, but horizontal keys also work
+                    p.setPosition(p.getX() + delta.x, p.getY() + delta.y, p.getZ() + delta.z);
+                } else if (noclipBypass == 2) { // HClip: horizontal, with vertical keys when asked
+                    p.setPosition(p.getX() + delta.x, p.getY() + delta.y, p.getZ() + delta.z);
+                } else if (noclipBypass == 3) { // Packet desync: gentle correction, no forced downward push
+                    p.setVelocity(delta.x, delta.y, delta.z);
+                    if (p.age % 6 == 0) {
+                        mc.getNetworkHandler().sendPacket(new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.PositionAndOnGround(p.getX(), p.getY(), p.getZ(), false));
+                    }
+                } else if (noclipBypass >= NOCLIP_MODES.length) {
+                    // User-created list entries use the editable direction/step settings.
+                    p.setPosition(p.getX() + delta.x, p.getY() + delta.y, p.getZ() + delta.z);
+                } else {
+                    // Perk, Side Step, Sky Lift and the extended profiles are all
+                    // client-side movement shapes. Up/sideways are always available.
+                    if (noclipBypass == 6) {
+                        p.setVelocity(delta.x, delta.y + 0.02, delta.z);
+                    } else if (noclipBypass == 7) {
+                        p.setPosition(p.getX() + delta.x * 1.4, p.getY() + delta.y, p.getZ() + delta.z * 1.4);
+                    } else if (noclipBypass == 8 || noclipBypass == 27) {
+                        p.setVelocity(delta.x, delta.y + step * 0.35, delta.z);
+                    } else if (noclipBypass == 9 || noclipBypass == 12) {
+                        p.setVelocity(delta.x * 0.8, delta.y, delta.z * 0.8);
+                    } else if (noclipBypass == 10 || noclipBypass == 22 || noclipBypass == 31) {
+                        p.setVelocity(delta.x * 1.15, delta.y * 1.15, delta.z * 1.15);
+                    } else if (noclipBypass == 11 || noclipBypass == 15 || noclipBypass == 30) {
+                        p.setPosition(p.getX() + delta.x, p.getY() + delta.y, p.getZ() + delta.z);
+                    } else if (noclipBypass == 13 || noclipBypass == 23) {
+                        p.setVelocity(delta.x * 1.05, delta.y, delta.z * 1.05);
+                    } else if (noclipBypass == 14 || noclipBypass == 16) {
+                        p.setVelocity(delta.x, Math.max(-step, delta.y), delta.z);
+                    } else if (noclipBypass == 17) {
+                        p.setPosition(p.getX() + delta.x, p.getY() + Math.max(0, delta.y), p.getZ() + delta.z);
+                    } else if (noclipBypass == 18) {
+                        p.setVelocity(delta.x * 0.6, delta.y * 0.6, delta.z * 0.6);
+                    } else {
+                        double wave = Math.sin(clientTick * 0.18) * step * 0.15;
+                        p.setVelocity(delta.x, delta.y + wave, delta.z);
                     }
                 }
                 p.fallDistance = 0;
@@ -1154,7 +1222,44 @@ public class PypsenClient implements ClientModInitializer {
                     case 8 -> vy = -0.03; // ReallyWorld
                     case 9 -> { if (p.age % 5 == 0) vy = 0.05; else vy = -0.05; } // Vulcan
                     case 10 -> vy = -0.02; // Spartan
+                    case 11 -> vy = Math.sin(p.age * 0.12) * 0.015; // Grim AC
+                    case 12 -> vy = -0.015; // Polar AC
+                    case 13 -> vy = -0.02 + Math.sin(p.age * 0.08) * 0.01; // Intave
+                    case 14 -> vy = 0.06; // Hyper
+                    case 15 -> vy = -0.01 + (p.age % 3 == 0 ? 0.03 : 0); // NCP+
+                    case 16 -> vy = -0.02 + (p.age % 7 == 0 ? 0.08 : 0); // Grim+
+                    case 17 -> vy = Math.cos(p.age * 0.1) * 0.02; // Intave+
+                    case 18 -> vy = -0.03; // Vulcan+
+                    case 19 -> vy = -0.01; // Matrix+
+                    case 20 -> vy = p.age % 4 == 0 ? 0.04 : -0.01; // Polar+
+                    case 21 -> vy = Math.sin(p.age * 0.07) * 0.04; // Quantum
+                    case 22 -> vy = 0.03; // Nebula
+                    case 23 -> vy = -0.005; // Zenith
+                    case 24 -> vy = -0.02 + Math.sin(p.age * 0.15) * 0.02; // Aero
+                    case 25 -> vy = p.age % 6 == 0 ? 0.09 : -0.03; // Pulse
+                    case 26 -> vy = Math.cos(p.age * 0.05) * 0.025; // Drift
+                    case 27 -> vy = 0.08; // Skywalker
+                    case 28 -> vy = -0.015 + Math.sin(p.age * 0.2) * 0.005; // Phantom
+                    case 29 -> vy = 0; // Silent Sky
+                    case 30 -> vy = -0.04; // Turbo Sky
+                    case 31 -> vy = Math.sin(p.age * 0.09) * 0.03; // Orbit
+                    case 32 -> vy = -0.01; // Glide
+                    case 33 -> vy = p.age % 8 == 0 ? 0.07 : -0.02; // Matrix V2
+                    case 34 -> vy = Math.cos(p.age * 0.11) * 0.015; // AAC+
+                    case 35 -> vy = -0.025; // Spartan+
+                    case 36 -> vy = 0.01; // Polar V2
+                    case 37 -> vy = -0.01 + Math.sin(p.age * 0.13) * 0.01; // Intave V2
+                    case 38 -> vy = -0.02 + (p.age % 5 == 0 ? 0.06 : 0); // Grim V2
+                    case 39 -> vy = 0.05; // Hyper V2
+                    case 40 -> vy = 0; // Vanilla Air
+                    case 41 -> vy *= 0.35; // Smooth Fly
+                    case 42 -> vy = p.age % 2 == 0 ? 0.02 : -0.01; // Step Fly
+                    case 43 -> vy = -0.015; // Guard
+                    case 44 -> vy = Math.sin(p.age * 0.04) * 0.05; // Nova
+                    case 45 -> vy = Math.cos(p.age * 0.06) * 0.03; // Aurora
+                    default -> vy = flyCustomVertical + Math.sin(p.age * 0.1) * flyCustomPulse;
                 }
+                if (flyBypass >= BYPASS_NAMES.length) vy = flyCustomVertical + Math.sin(p.age * 0.1) * flyCustomPulse;
                 p.setVelocity(vx, vy, vz);
             } else {
                 if (mc.player != null && !mc.player.isCreative() && !mc.player.isSpectator()) {
@@ -1740,6 +1845,164 @@ public class PypsenClient implements ClientModInitializer {
         XRAY_BLOCKS.addAll(Arrays.asList(DEFAULT_XRAY_BLOCKS));
     }
 
+    public static String[] allBypassNames() {
+        String[] all = Arrays.copyOf(BYPASS_NAMES, BYPASS_NAMES.length + customBypassNames.size());
+        for (int i = 0; i < customBypassNames.size(); i++) {
+            all[BYPASS_NAMES.length + i] = customBypassNames.get(i);
+        }
+        return all;
+    }
+
+    public static String[] allNoclipModes() {
+        String[] all = Arrays.copyOf(NOCLIP_MODES, NOCLIP_MODES.length + customBypassNames.size());
+        for (int i = 0; i < customBypassNames.size(); i++) {
+            all[NOCLIP_MODES.length + i] = customBypassNames.get(i);
+        }
+        return all;
+    }
+
+    public static String[] allSpiderModes() {
+        String[] all = Arrays.copyOf(SPIDER_MODES, SPIDER_MODES.length + customBypassNames.size());
+        for (int i = 0; i < customBypassNames.size(); i++) {
+            all[SPIDER_MODES.length + i] = customBypassNames.get(i);
+        }
+        return all;
+    }
+
+    public static String sanitizeEntry(String value) {
+        if (value == null) return "";
+        String cleaned = value.trim().replaceAll("[^A-Za-z0-9_\\- .]", "_");
+        if (cleaned.length() > 24) cleaned = cleaned.substring(0, 24);
+        return cleaned;
+    }
+
+    public static UUID offlineUuid(String name) {
+        String key = "OfflinePlayer:" + sanitizeEntry(name).toLowerCase(Locale.ROOT);
+        long high = 0, low = 0;
+        for (byte b : key.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+            high = 31L * high + (b & 0xff);
+            low = 37L * low + (b & 0xff);
+        }
+        return new UUID(high, low);
+    }
+
+    /** Changes only the local client session; no token or launcher files are touched. */
+    public static boolean applyAccount(int index) {
+        if (index < 0 || index >= accountNames.size()) return false;
+        try {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            Object current = mc.getSession();
+            if (current == null) {
+                accountStatus = "\u00a7cNo session available";
+                return false;
+            }
+            String name = sanitizeEntry(accountNames.get(index));
+            if (name.isEmpty()) {
+                accountStatus = "\u00a7cEmpty name";
+                return false;
+            }
+            Object[] options = {Optional.empty(), Optional.empty()};
+            Object replacement = null;
+            for (java.lang.reflect.Constructor<?> c : current.getClass().getConstructors()) {
+                Class<?>[] args = c.getParameterTypes();
+                if (args.length == 5 && args[0] == String.class && args[1] == UUID.class
+                        && args[2] == String.class && args[3] == Optional.class && args[4] == Optional.class) {
+                    replacement = c.newInstance(name, offlineUuid(name), "offline", options[0], options[1]);
+                    break;
+                }
+                if (args.length == 6 && args[0] == String.class && args[1] == String.class
+                        && args[2] == String.class && args[3] == Optional.class && args[4] == Optional.class
+                        && args[5].isEnum()) {
+                    Object type = args[5].getEnumConstants()[0];
+                    replacement = c.newInstance(name, offlineUuid(name).toString(), "offline", options[0], options[1], type);
+                    break;
+                }
+            }
+            if (replacement == null) {
+                accountStatus = "\u00a7cUnsupported session API";
+                return false;
+            }
+            boolean set = false;
+            for (java.lang.reflect.Field f : mc.getClass().getDeclaredFields()) {
+                if (!f.getType().isAssignableFrom(replacement.getClass())) continue;
+                f.setAccessible(true);
+                f.set(mc, replacement);
+                set = true;
+                break;
+            }
+            if (!set) {
+                accountStatus = "\u00a7cSession field not found";
+                return false;
+            }
+            selectedAccount = index;
+            accountStatus = "\u00a7aLocal session: " + name + " \u00a77(reconnect to apply)";
+            return true;
+        } catch (Throwable t) {
+            accountStatus = "\u00a7cSwitch failed";
+            return false;
+        }
+    }
+
+    public static void addAccount(String rawName) {
+        String name = sanitizeEntry(rawName);
+        if (name.isEmpty()) return;
+        int existing = accountNames.indexOf(name);
+        if (existing >= 0) {
+            selectedAccount = existing;
+            accountStatus = "\u00a7eAlready in list";
+        } else {
+            accountNames.add(name);
+            selectedAccount = accountNames.size() - 1;
+            accountStatus = "\u00a7aAdded: " + name;
+        }
+        saveConfig();
+    }
+
+    public static void removeAccount(int index) {
+        if (index < 0 || index >= accountNames.size()) return;
+        accountNames.remove(index);
+        selectedAccount = Math.max(0, Math.min(selectedAccount, accountNames.size() - 1));
+        accountStatus = "\u00a7eRemoved account";
+        saveConfig();
+    }
+
+    public static void addBypassName(String rawName) {
+        String name = sanitizeEntry(rawName);
+        if (name.isEmpty()) return;
+        if (!customBypassNames.contains(name)) {
+            customBypassNames.add(name);
+            saveConfig();
+        }
+    }
+
+    public static void removeBypassName(String name) {
+        if (customBypassNames.remove(name)) saveConfig();
+    }
+
+    private static Vec3d noclipMoveDelta(net.minecraft.client.network.ClientPlayerEntity p, double step) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        double yaw = Math.toRadians(p.getYaw());
+        double dx = 0, dy = 0, dz = 0;
+        float fw = p.input.movementForward;
+        float st = p.input.movementSideways;
+        if (fw != 0 || st != 0) {
+            double angle = yaw - Math.atan2(fw, st) + Math.PI / 2;
+            dx = -Math.sin(angle) * step;
+            dz = Math.cos(angle) * step;
+        }
+        if (mc.options.jumpKey.isPressed()) dy += step;
+        if (mc.options.sneakKey.isPressed()) dy -= step;
+
+        int dir = MathHelper.clamp(noclipDirection, 0, NOCLIP_DIRECTIONS.length - 1);
+        if (dir == 1 || dir == 7) return new Vec3d(0, step, 0);
+        if (dir == 2 || dir == 8) return new Vec3d(0, -step, 0);
+        if (dir == 3) return new Vec3d(-Math.sin(yaw) * step, 0, Math.cos(yaw) * step);
+        if (dir == 4) return new Vec3d(Math.sin(yaw) * step, 0, -Math.cos(yaw) * step);
+        if (dir == 5) return new Vec3d(-Math.cos(yaw) * step, 0, -Math.sin(yaw) * step);
+        if (dir == 6) return new Vec3d(Math.cos(yaw) * step, 0, Math.sin(yaw) * step);
+        return new Vec3d(dx, dy, dz);
+    }
+
     private static long chunkKey(int cx, int cz) {
         return (((long) cx) << 32) ^ (cz & 0xffffffffL);
     }
@@ -1952,31 +2215,39 @@ public class PypsenClient implements ClientModInitializer {
         int mode = MathHelper.clamp(dupeMode, 0, DUPE_MODES.length - 1);
         ItemStack source = ItemStack.EMPTY;
         int sourceSlot = -1;
-        for (int i = 9; i < 45; i++) {
-            ItemStack stack = p.getInventory().getStack(i);
-            if (!stack.isEmpty()) {
-                source = stack.copy();
-                sourceSlot = i;
-                break;
+        if (mode == 3 || mode == 4) {
+            source = p.getMainHandStack().copy();
+        } else {
+            for (int i = 9; i < 45; i++) {
+                ItemStack stack = p.getInventory().getStack(i);
+                if (!stack.isEmpty()) {
+                    source = stack.copy();
+                    sourceSlot = i;
+                    break;
+                }
             }
         }
-        if (source.isEmpty()) return;
         if (mode == 2) {
             for (int type = 0; type < 4; type++) {
                 ItemStack armor = p.getInventory().getArmorStack(type);
                 if (!armor.isEmpty()) source = armor.copy();
             }
         }
+        if (source.isEmpty()) return;
         int placed = 0;
         for (int i = 9; i < 45 && placed < copies; i++) {
             if (mode == 1 && i == sourceSlot) continue;
             if (!p.getInventory().getStack(i).isEmpty()) continue;
             ItemStack copy = source.copy();
-            if (mode == 1 && p.getInventory().getStack(sourceSlot).getCount() > 1) {
+            if ((mode == 1 || mode == 4) && sourceSlot >= 0 && p.getInventory().getStack(sourceSlot).getCount() > 1) {
                 ItemStack original = p.getInventory().getStack(sourceSlot);
-                int half = original.getCount() / 2;
+                int half = Math.max(1, original.getCount() / 2);
                 copy.setCount(half);
                 original.setCount(original.getCount() - half);
+            } else if (mode == 5) {
+                int hotbarSlot = placed % 9;
+                ItemStack hot = p.getInventory().getStack(hotbarSlot);
+                if (!hot.isEmpty()) copy = hot.copy();
             }
             p.getInventory().setStack(i, copy);
             placed++;
@@ -2444,6 +2715,8 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("noWebMode=" + noWebMode + "\n");
             writer.write("noclipOn=" + noclipOn + "\n");
             writer.write("noclipBypass=" + noclipBypass + "\n");
+            writer.write("noclipStep=" + noclipStep + "\n");
+            writer.write("noclipDirection=" + noclipDirection + "\n");
             writer.write("freezeOn=" + freezeOn + "\n");
             writer.write("freezeMode=" + freezeMode + "\n");
             writer.write("freezeVisual=" + freezeVisual + "\n");
@@ -2470,6 +2743,12 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("hitboxFix=" + hitboxFix + "\n");
             writer.write("xrayStealth=" + xrayStealth + "\n");
             writer.write("xrayHighlight=" + xrayHighlight + "\n");
+            writer.write("flyCustomVertical=" + flyCustomVertical + "\n");
+            writer.write("flyCustomPulse=" + flyCustomPulse + "\n");
+            writer.write("spiderCustomPulse=" + spiderCustomPulse + "\n");
+            for (String name : customBypassNames) writer.write("customBypass=" + sanitizeEntry(name) + "\n");
+            writer.write("selectedAccount=" + selectedAccount + "\n");
+            for (String name : accountNames) writer.write("accountName=" + sanitizeEntry(name) + "\n");
             writer.write("waterCrits=" + waterCrits + "\n");
             writer.write("crasherTimerMode=" + crasherTimerMode + "\n");
             writer.write("crasherMode=" + crasherMode + "\n");
@@ -2543,6 +2822,8 @@ public class PypsenClient implements ClientModInitializer {
             File file = new File(MinecraftClient.getInstance().runDirectory, "pypsen_config.txt");
             if (!file.exists()) return;
             List<String> lines = Files.readAllLines(file.toPath());
+            customBypassNames.clear();
+            accountNames.clear();
             for (String line : lines) {
                 String[] parts = line.split("=", 2);
                 if (parts.length < 2) continue;
@@ -2622,6 +2903,8 @@ public class PypsenClient implements ClientModInitializer {
                     case "noWebMode" -> noWebMode = Integer.parseInt(val);
                     case "noclipOn" -> noclipOn = Boolean.parseBoolean(val);
                     case "noclipBypass" -> noclipBypass = Integer.parseInt(val);
+                    case "noclipStep" -> noclipStep = Float.parseFloat(val);
+                    case "noclipDirection" -> noclipDirection = Integer.parseInt(val);
                     case "freezeOn" -> freezeOn = Boolean.parseBoolean(val);
                     case "freezeMode" -> freezeMode = Integer.parseInt(val);
                     case "freezeVisual" -> freezeVisual = Boolean.parseBoolean(val);
@@ -2648,6 +2931,18 @@ public class PypsenClient implements ClientModInitializer {
                     case "hitboxFix" -> hitboxFix = Boolean.parseBoolean(val);
                     case "xrayStealth" -> xrayStealth = Integer.parseInt(val);
                     case "xrayHighlight" -> xrayHighlight = Boolean.parseBoolean(val);
+                    case "flyCustomVertical" -> flyCustomVertical = Float.parseFloat(val);
+                    case "flyCustomPulse" -> flyCustomPulse = Float.parseFloat(val);
+                    case "spiderCustomPulse" -> spiderCustomPulse = Float.parseFloat(val);
+                    case "customBypass" -> {
+                        String name = sanitizeEntry(val);
+                        if (!name.isEmpty() && !customBypassNames.contains(name)) customBypassNames.add(name);
+                    }
+                    case "selectedAccount" -> selectedAccount = Integer.parseInt(val);
+                    case "accountName" -> {
+                        String name = sanitizeEntry(val);
+                        if (!name.isEmpty()) accountNames.add(name);
+                    }
                     case "waterCrits" -> waterCrits = Boolean.parseBoolean(val);
                     case "crasherTimerMode" -> crasherTimerMode = Integer.parseInt(val);
                     case "crasherMode" -> crasherMode = Integer.parseInt(val);
@@ -2739,11 +3034,11 @@ public class PypsenClient implements ClientModInitializer {
             auraCustomNotNearRange = MathHelper.clamp(auraCustomNotNearRange, 0.5f, auraCustomRange);
             auraCustomMode = MathHelper.clamp(auraCustomMode, 0, AURA_MODES.length - 1);
             auraCustomRotMode = MathHelper.clamp(auraCustomRotMode, 0, AURA_ROTS.length - 1);
-            auraCustomBypass = MathHelper.clamp(auraCustomBypass, 0, BYPASS_NAMES.length - 1);
+            auraCustomBypass = MathHelper.clamp(auraCustomBypass, 0, allBypassNames().length - 1);
             auraCustomRange = MathHelper.clamp(auraCustomRange, 1f, 20f);
             auraCustomFov = MathHelper.clamp(auraCustomFov, 10f, 360f);
             auraCustomRotSpeed = MathHelper.clamp(auraCustomRotSpeed, 1f, 180f);
-            spiderMode = MathHelper.clamp(spiderMode, 0, SPIDER_MODES.length - 1);
+            spiderMode = MathHelper.clamp(spiderMode, 0, SPIDER_MODES.length + customBypassNames.size() - 1);
             freezeMode = MathHelper.clamp(freezeMode, 0, FREEZE_MODES.length - 1);
             airJumpMode = MathHelper.clamp(airJumpMode, 0, AIRJUMP_MODES.length - 1);
             noFallMode = MathHelper.clamp(noFallMode, 0, NOFALL_MODES.length - 1);
@@ -2759,12 +3054,19 @@ public class PypsenClient implements ClientModInitializer {
             auraSmoothing = MathHelper.clamp(auraSmoothing, 0f, 0.95f);
             optProfile = MathHelper.clamp(optProfile, 0, OPT_PROFILES.length - 1);
             xrayStealth = MathHelper.clamp(xrayStealth, 0, XRAY_STEALTH_MODES.length - 1);
-            speedBypass = MathHelper.clamp(speedBypass, 0, BYPASS_NAMES.length - 1);
-            auraBypass = MathHelper.clamp(auraBypass, 0, BYPASS_NAMES.length - 1);
-            flyBypass = MathHelper.clamp(flyBypass, 0, BYPASS_NAMES.length - 1);
+            int bypassCount = allBypassNames().length;
+            speedBypass = MathHelper.clamp(speedBypass, 0, bypassCount - 1);
+            auraBypass = MathHelper.clamp(auraBypass, 0, bypassCount - 1);
+            flyBypass = MathHelper.clamp(flyBypass, 0, bypassCount - 1);
             godModeMode = MathHelper.clamp(godModeMode, 0, GODMODE_MODES.length - 1);
             noWebMode = MathHelper.clamp(noWebMode, 0, NOWEB_MODES.length - 1);
-            noclipBypass = MathHelper.clamp(noclipBypass, 0, NOCLIP_MODES.length - 1);
+            noclipBypass = MathHelper.clamp(noclipBypass, 0, NOCLIP_MODES.length + customBypassNames.size() - 1);
+            noclipDirection = MathHelper.clamp(noclipDirection, 0, NOCLIP_DIRECTIONS.length - 1);
+            noclipStep = MathHelper.clamp(noclipStep, 0.05f, 4f);
+            flyCustomVertical = MathHelper.clamp(flyCustomVertical, -1f, 1f);
+            flyCustomPulse = MathHelper.clamp(flyCustomPulse, 0f, 1f);
+            spiderCustomPulse = MathHelper.clamp(spiderCustomPulse, 0f, 1f);
+            selectedAccount = MathHelper.clamp(selectedAccount, 0, Math.max(0, accountNames.size() - 1));
             crasherMode = MathHelper.clamp(crasherMode, 0, CRASHER_MODES.length - 1);
             crasherTimerMode = MathHelper.clamp(crasherTimerMode, 0, CRASHER_TIMERS.length - 1);
             spiderSpeed = MathHelper.clamp(spiderSpeed, 0.5f, 4f);
@@ -2881,6 +3183,155 @@ public class PypsenClient implements ClientModInitializer {
         }
     }
 
+    // ══════════ ACCOUNT SWITCHER ══════════
+    public static class AccountScreen extends Screen {
+        private final Screen parent;
+        private net.minecraft.client.gui.widget.TextFieldWidget nameField;
+        private int page = 0;
+
+        public AccountScreen(Screen parent) {
+            super(Text.literal("Account Switcher"));
+            this.parent = parent;
+        }
+
+        @Override
+        protected void init() {
+            addDrawableChild(ButtonWidget.builder(Text.literal("<- Back"), b -> {
+                saveConfig();
+                MinecraftClient.getInstance().setScreen(parent);
+            }).dimensions(10, 10, 100, 20).build());
+
+            int fieldW = Math.max(80, Math.min(180, width - 20));
+            nameField = new net.minecraft.client.gui.widget.TextFieldWidget(textRenderer, 10, 38, fieldW, 20, Text.literal("Account name"));
+            if (selectedAccount >= 0 && selectedAccount < accountNames.size()) {
+                nameField.setText(accountNames.get(selectedAccount));
+            }
+            addDrawableChild(nameField);
+
+            int bw = Math.max(60, (width - 24) / 3);
+            addDrawableChild(ButtonWidget.builder(Text.literal("Add"), b -> {
+                addAccount(nameField.getText());
+                MinecraftClient.getInstance().setScreen(new AccountScreen(parent));
+            }).dimensions(10, 66, bw, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Switch Local"), b -> applyAccount(selectedAccount))
+                    .dimensions(14 + bw, 66, bw, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Remove"), b -> {
+                removeAccount(selectedAccount);
+                MinecraftClient.getInstance().setScreen(new AccountScreen(parent));
+            }).dimensions(18 + bw * 2, 66, bw, 20).build());
+
+            int perPage = 9;
+            if (page < 0) page = 0;
+            if (page > Math.max(0, (accountNames.size() - 1) / perPage)) {
+                page = Math.max(0, (accountNames.size() - 1) / perPage);
+            }
+            for (int i = 0; i < perPage; i++) {
+                int index = page * perPage + i;
+                if (index >= accountNames.size()) break;
+                int y = 96 + i * 22;
+                String mark = index == selectedAccount ? "\u00a7a*" : "\u00a77 ";
+                addDrawableChild(ButtonWidget.builder(Text.literal(mark + accountNames.get(index)), b -> {
+                    selectedAccount = index;
+                    applyAccount(index);
+                }).dimensions(10, y, Math.max(60, width - 80), 20).build());
+                addDrawableChild(ButtonWidget.builder(Text.literal("x"), b -> {
+                    removeAccount(index);
+                    MinecraftClient.getInstance().setScreen(new AccountScreen(parent));
+                }).dimensions(Math.max(76, width - 64), y, 54, 20).build());
+            }
+            int navY = 96 + perPage * 22 + 4;
+            addDrawableChild(ButtonWidget.builder(Text.literal("<<"), b -> {
+                page = Math.max(0, page - 1);
+                MinecraftClient.getInstance().setScreen(new AccountScreen(parent));
+            }).dimensions(10, navY, 54, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal(">>"), b -> {
+                page++;
+                MinecraftClient.getInstance().setScreen(new AccountScreen(parent));
+            }).dimensions(70, navY, 54, 20).build());
+        }
+
+        @Override
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            renderBackground(ctx);
+            super.render(ctx, mx, my, d);
+            ctx.drawTextWithShadow(textRenderer, "\u00a78Local/offline session only - no launcher tokens touched", 10, 88, 0xFFFFFF);
+            if (!accountStatus.isEmpty()) {
+                ctx.drawTextWithShadow(textRenderer, accountStatus, 10, height - 24, 0xFFFFFF);
+            }
+        }
+    }
+
+    // ══════════ EDITABLE BYPASS LIST ══════════
+    public static class BypassScreen extends Screen {
+        private final Screen parent;
+        private net.minecraft.client.gui.widget.TextFieldWidget nameField;
+        private int page = 0;
+
+        public BypassScreen(Screen parent) {
+            super(Text.literal("Custom Bypass List"));
+            this.parent = parent;
+        }
+
+        @Override
+        protected void init() {
+            addDrawableChild(ButtonWidget.builder(Text.literal("<- Back"), b -> {
+                saveConfig();
+                MinecraftClient.getInstance().setScreen(parent);
+            }).dimensions(10, 10, 100, 20).build());
+
+            int fieldW = Math.max(80, Math.min(180, width - 20));
+            nameField = new net.minecraft.client.gui.widget.TextFieldWidget(textRenderer, 10, 38, fieldW, 20, Text.literal("Bypass name"));
+            addDrawableChild(nameField);
+            int bw = Math.max(70, (width - 20) / 2);
+            addDrawableChild(ButtonWidget.builder(Text.literal("Add name"), b -> {
+                addBypassName(nameField.getText());
+                MinecraftClient.getInstance().setScreen(new BypassScreen(parent));
+            }).dimensions(10, 66, bw, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Clear all"), b -> {
+                customBypassNames.clear();
+                saveConfig();
+                MinecraftClient.getInstance().setScreen(new BypassScreen(parent));
+            }).dimensions(14 + bw, 66, bw, 20).build());
+
+            int perPage = 9;
+            if (page > Math.max(0, (customBypassNames.size() - 1) / perPage)) {
+                page = Math.max(0, (customBypassNames.size() - 1) / perPage);
+            }
+            for (int i = 0; i < perPage; i++) {
+                int index = page * perPage + i;
+                if (index >= customBypassNames.size()) break;
+                String name = customBypassNames.get(index);
+                int y = 96 + i * 22;
+                addDrawableChild(ButtonWidget.builder(Text.literal(name), b -> {
+                    flyBypass = BYPASS_NAMES.length + index;
+                    noclipBypass = NOCLIP_MODES.length + index;
+                    spiderMode = SPIDER_MODES.length + index;
+                    saveConfig();
+                }).dimensions(10, y, Math.max(60, width - 80), 20).build());
+                addDrawableChild(ButtonWidget.builder(Text.literal("x"), b -> {
+                    removeBypassName(name);
+                    MinecraftClient.getInstance().setScreen(new BypassScreen(parent));
+                }).dimensions(Math.max(76, width - 64), y, 54, 20).build());
+            }
+            int navY = 96 + perPage * 22 + 4;
+            addDrawableChild(ButtonWidget.builder(Text.literal("<<"), b -> {
+                page = Math.max(0, page - 1);
+                MinecraftClient.getInstance().setScreen(new BypassScreen(parent));
+            }).dimensions(10, navY, 54, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal(">>"), b -> {
+                page++;
+                MinecraftClient.getInstance().setScreen(new BypassScreen(parent));
+            }).dimensions(70, navY, 54, 20).build());
+        }
+
+        @Override
+        public void render(DrawContext ctx, int mx, int my, float d) {
+            renderBackground(ctx);
+            super.render(ctx, mx, my, d);
+            ctx.drawTextWithShadow(textRenderer, "\u00a78Custom names use the editable fly/spider/noclip values", 10, 88, 0xFFFFFF);
+        }
+    }
+
     // ══════════ MAIN MENU SCREEN ══════════
     public static class MenuScreen extends Screen {
         private int scroll = 0;
@@ -2934,6 +3385,13 @@ public class PypsenClient implements ClientModInitializer {
                 if (client != null) client.setScreen(new ModernGuiScreen());
             }).dimensions(x, y, w, 20).build()); y += 26;
 
+            addDrawableChild(ButtonWidget.builder(Text.literal("Account Switcher (local)"), b -> {
+                if (client != null) client.setScreen(new AccountScreen(this));
+            }).dimensions(x, y, w / 2 - 2, 20).build());
+            addDrawableChild(ButtonWidget.builder(Text.literal("Bypass List"), b -> {
+                if (client != null) client.setScreen(new BypassScreen(this));
+            }).dimensions(x + w / 2 + 2, y, w / 2 - 2, 20).build()); y += 26;
+
             addDrawableChild(ButtonWidget.builder(Text.literal("\u00a7e--- PRESETS ---"), b -> {}).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Funtime"), b -> applyPreset("Funtime")).dimensions(x, y, w/2 - 2, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("ReallyWorld"), b -> applyPreset("ReallyWorld")).dimensions(x + w/2 + 4, y, w/2 - 4, 20).build()); y += 22;
@@ -2957,7 +3415,7 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(slider(x, y, w, "FOV", 10f, 360f, auraFov, v -> auraFov = v)); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Predict: " + (auraPredict ? "§aON" : "§cOFF")), b -> { auraPredict = !auraPredict; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Randomize: " + (auraRandomize ? "§aON" : "§cOFF")), b -> { auraRandomize = !auraRandomize; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
-            addDrawableChild(cycleBtn(x, y, w, "Bypass", BYPASS_NAMES, auraBypass, v -> { auraBypass = v; rebuild(); })); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Bypass", allBypassNames(), auraBypass, v -> { auraBypass = v; rebuild(); })); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("NOT NEAR: " + (auraNotNear ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraNotNear = !auraNotNear; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(slider(x, y, w, "Keep Distance", 0.5f, 8f, auraNotNearRange, v -> auraNotNearRange = v)); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Rotation: " + (auraRotationEnabled ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraRotationEnabled = !auraRotationEnabled; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
@@ -3074,12 +3532,15 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(cycleBtn(x, y, w, "Mode", VELOCITY_MODES, velocityMode, v -> { velocityMode = v; rebuild(); })); y += 26;
             y = section(x, y, w, "Strafe", strafeOn, b -> { strafeOn = !strafeOn; rebuild(); }, keyStrafe, 7); y += 4;
             y = section(x, y, w, "Noclip", noclipOn, b -> { noclipOn = !noclipOn; rebuild(); }, keyNoclip, 11);
-            addDrawableChild(cycleBtn(x, y, w, "Mode", NOCLIP_MODES, noclipBypass, v -> { noclipBypass = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Mode", allNoclipModes(), noclipBypass, v -> { noclipBypass = v; rebuild(); })); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Direction", NOCLIP_DIRECTIONS, noclipDirection, v -> { noclipDirection = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Step", 0.05f, 4f, noclipStep, v -> noclipStep = v)); y += 26;
             y = section(x, y, w, "Anti-Flag", antiFlagOn, b -> { antiFlagOn = !antiFlagOn; rebuild(); }, keyAntiFlag, 12); y += 4;
 
             y = section(x, y, w, "Spider", spiderOn, b -> { spiderOn = !spiderOn; rebuild(); }, keySpider, 18);
-            addDrawableChild(cycleBtn(x, y, w, "Mode", SPIDER_MODES, spiderMode, v -> { spiderMode = v; rebuild(); })); y += 22;
-            addDrawableChild(slider(x, y, w, "Speed", 0.5f, 4f, spiderSpeed, v -> spiderSpeed = v)); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Mode", allSpiderModes(), spiderMode, v -> { spiderMode = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Speed", 0.5f, 4f, spiderSpeed, v -> spiderSpeed = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Custom Pulse", 0f, 1f, spiderCustomPulse, v -> spiderCustomPulse = v)); y += 26;
 
             y = section(x, y, w, "NoWeb", noWebOn, b -> { noWebOn = !noWebOn; rebuild(); }, keyNoWeb, 19);
             addDrawableChild(cycleBtn(x, y, w, "Mode", NOWEB_MODES, noWebMode, v -> { noWebMode = v; rebuild(); })); y += 26;
@@ -3100,11 +3561,13 @@ public class PypsenClient implements ClientModInitializer {
 
             y = section(x, y, w, "Speed", speedOn, b -> { speedOn = !speedOn; rebuild(); }, keySpeed, 0);
             addDrawableChild(slider(x, y, w, "Speed", 0.1f, 100f, speedVal, v -> speedVal = v)); y += 22;
-            addDrawableChild(cycleBtn(x, y, w, "Bypass", BYPASS_NAMES, speedBypass, v -> { speedBypass = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Bypass", allBypassNames(), speedBypass, v -> { speedBypass = v; rebuild(); })); y += 26;
 
             y = section(x, y, w, "Fly", flyOn, b -> { flyOn = !flyOn; rebuild(); }, keyFly, 3);
             addDrawableChild(slider(x, y, w, "Fly Speed", 0.1f, 50f, flySpeed, v -> flySpeed = v)); y += 22;
-            addDrawableChild(cycleBtn(x, y, w, "Bypass", BYPASS_NAMES, flyBypass, v -> { flyBypass = v; rebuild(); })); y += 26;
+            addDrawableChild(cycleBtn(x, y, w, "Bypass", allBypassNames(), flyBypass, v -> { flyBypass = v; rebuild(); })); y += 22;
+            addDrawableChild(slider(x, y, w, "Custom Vertical", -1f, 1f, flyCustomVertical, v -> flyCustomVertical = v)); y += 22;
+            addDrawableChild(slider(x, y, w, "Custom Pulse", 0f, 1f, flyCustomPulse, v -> flyCustomPulse = v)); y += 26;
 
             y = section(x, y, w, "XRay", xrayOn, b -> { xrayOn = !xrayOn; MinecraftClient.getInstance().worldRenderer.reload(); rebuild(); }, keyXray, 4);
             addDrawableChild(cycleBtn(x, y, w, "Mode", XRAY_MODES, xrayMode, v -> { xrayMode = v; rebuild(); })); y += 22;
@@ -3179,6 +3642,7 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("Creative Drop: " + (creativeDropOn ? "§aQUEUED" : "§7READY")), b -> { creativeDropOn = true; }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(slider(x, y, w, "Drop Count", 1f, 64f, creativeDropCount, v -> creativeDropCount = v.intValue())); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Creative Duplicate: " + (creativeDupeOn ? "§aQUEUED" : "§7READY")), b -> { creativeDupeOn = true; }).dimensions(x, y, w, 20).build()); y += 22;
+            addDrawableChild(ButtonWidget.builder(Text.literal("Duplicate Held Item"), b -> { dupeMode = 3; creativeDupeOn = true; }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(cycleBtn(x, y, w, "Dupe", DUPE_MODES, dupeMode, v -> { dupeMode = v; rebuild(); })); y += 22;
             addDrawableChild(slider(x, y, w, "Copies", 1f, 20f, creativeDupeCount, v -> creativeDupeCount = v.intValue())); y += 26;
 
@@ -3397,7 +3861,7 @@ public class PypsenClient implements ClientModInitializer {
                 addS(0, "FOV", 10f, 360f, auraFov, v->auraFov=v);
                 addB(0, "Predict", auraPredict, v->auraPredict=v);
                 addB(0, "Randomize", auraRandomize, v->auraRandomize=v);
-                addC(0, "Bypass", BYPASS_NAMES, auraBypass, v->auraBypass=v);
+                addC(0, "Bypass", allBypassNames(), auraBypass, v->auraBypass=v);
                 addB(0, "NOT NEAR", auraNotNear, v->auraNotNear=v);
                 addS(0, "Keep Distance", 0.5f, 8f, auraNotNearRange, v->auraNotNearRange=v);
                 addB(0, "Rotation", auraRotationEnabled, v->auraRotationEnabled=v);
@@ -3478,15 +3942,18 @@ public class PypsenClient implements ClientModInitializer {
             // Movement
             addMod(1, "Speed", speedOn, v->speedOn=v, () -> {
                 addS(1, "Speed", 0.1f, 100f, speedVal, v->speedVal=v);
-                addC(1, "Bypass", BYPASS_NAMES, speedBypass, v->speedBypass=v);
+                addC(1, "Bypass", allBypassNames(), speedBypass, v->speedBypass=v);
             });
             addMod(1, "Fly", flyOn, v->flyOn=v, () -> {
                 addS(1, "Speed", 0.1f, 50f, flySpeed, v->flySpeed=v);
-                addC(1, "Bypass", BYPASS_NAMES, flyBypass, v->flyBypass=v);
+                addC(1, "Bypass", allBypassNames(), flyBypass, v->flyBypass=v);
+                addS(1, "Custom Vert", -1f, 1f, flyCustomVertical, v->flyCustomVertical=v);
+                addS(1, "Custom Pulse", 0f, 1f, flyCustomPulse, v->flyCustomPulse=v);
             });
             addMod(1, "Spider", spiderOn, v->spiderOn=v, () -> {
-                addC(1, "Mode", SPIDER_MODES, spiderMode, v->spiderMode=v);
+                addC(1, "Mode", allSpiderModes(), spiderMode, v->spiderMode=v);
                 addS(1, "Speed", 0.5f, 4f, spiderSpeed, v->spiderSpeed=v);
+                addS(1, "Custom Pulse", 0f, 1f, spiderCustomPulse, v->spiderCustomPulse=v);
             });
             addMod(1, "NoWeb", noWebOn, v->noWebOn=v, () -> {
                 addC(1, "Mode", NOWEB_MODES, noWebMode, v->noWebMode=v);
@@ -3510,7 +3977,9 @@ public class PypsenClient implements ClientModInitializer {
                 addBind(1, "Bind", 27);
             });
             addMod(1, "Noclip", noclipOn, v->noclipOn=v, () -> {
-                addC(1, "Mode", NOCLIP_MODES, noclipBypass, v->noclipBypass=v);
+                addC(1, "Mode", allNoclipModes(), noclipBypass, v->noclipBypass=v);
+                addC(1, "Direction", NOCLIP_DIRECTIONS, noclipDirection, v->noclipDirection=v);
+                addS(1, "Step", 0.05f, 4f, noclipStep, v->noclipStep=v);
                 addBind(1, "Bind", 11);
             });
             addMod(1, "Velocity", velocityOn, v->velocityOn=v, () -> {
@@ -3622,12 +4091,22 @@ public class PypsenClient implements ClientModInitializer {
             addS(3, "Drop Count", 1f, 64f, creativeDropCount, v->creativeDropCount=v.intValue());
             y3 = cY[3] + curY[3] + scroll[3];
             addAt(3, y3, ButtonWidget.builder(Text.literal("Creative Duplicate"), b -> { creativeDupeOn = true; }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            y3 = cY[3] + curY[3] + scroll[3];
+            addAt(3, y3, ButtonWidget.builder(Text.literal("Duplicate Held"), b -> { dupeMode = 3; creativeDupeOn = true; }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
             addC(3, "Dupe", DUPE_MODES, dupeMode, v->dupeMode=v);
             addS(3, "Copies", 1f, 20f, creativeDupeCount, v->creativeDupeCount=v.intValue());
             addMod(3, "Panic", panicOn, v->panicOn=v, null);
             y3 = cY[3] + curY[3] + scroll[3];
             addAt(3, y3, ButtonWidget.builder(Text.literal("\u00a5 Advanced Features"), b -> {
                 MinecraftClient.getInstance().setScreen(new PypsenFeatures.FeaturesScreen(this));
+            }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            y3 = cY[3] + curY[3] + scroll[3];
+            addAt(3, y3, ButtonWidget.builder(Text.literal("Account Switcher"), b -> {
+                MinecraftClient.getInstance().setScreen(new AccountScreen(this));
+            }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            y3 = cY[3] + curY[3] + scroll[3];
+            addAt(3, y3, ButtonWidget.builder(Text.literal("Bypass List"), b -> {
+                MinecraftClient.getInstance().setScreen(new BypassScreen(this));
             }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
 
             for (int i = 0; i < 4; i++) contentHeight[i] = curY[i];
