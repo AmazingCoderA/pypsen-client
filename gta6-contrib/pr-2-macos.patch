@@ -1,5 +1,0 @@
-diff --git a/README.md b/README.md
---- a/README.md
-+++ b/README.md
-@@ -168,0 +169 @@
-+| **[Native-Victory-macOS](https://github.com/LakshanSivakumar/Native-Victory-macOS)**&nbsp;<a href="https://github.com/LakshanSivakumar/Native-Victory-macOS/stargazers"><img src="https://img.shields.io/github/stars/LakshanSivakumar/Native-Victory-macOS?style=flat&label=&color=30363d&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii0xLjUgLTEuNSAyNyAyNyI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTEyIDEuNmwzLjIgNi42IDcuMiAxLTUuMiA1LjEgMS4yIDcuMkwxMiAxOC4xbC02LjQgMy40IDEuMi03LjJMMS42IDkuMmw3LjItMXoiLz48L3N2Zz4%3D" alt="GitHub stars" height="24" align="texttop"></a><br><sub>Rust (`GPL-3.0`) · Xbox Series → macOS (native, Metal)</sub> | Native Apple Silicon port of `VIctory`: no Wine, guest code in-process, GPU straight to Metal; bring your own copy. Reaches the story intro on Apple Silicon; world load still exhausts GPU memory on 16 GB Macs and some compute shaders are refused. Has a `good first issue` for seven refused GFX10 shader shapes that can be tested without the game. Not playable. |
