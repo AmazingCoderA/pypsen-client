@@ -165,7 +165,7 @@ public final class PypsenFeatures {
         if (mc.player == null) return;
         if (fxOn) drawFx(ctx, mc);
         if (!advancedVisualsOn) return;
-        LivingEntity target = aiTarget != null && aiTarget.isAlive() ? aiTarget : PypsenClient.getAuraTarget();
+        LivingEntity target = aiAuraOn && aiTarget != null && aiTarget.isAlive() ? aiTarget : null;
         if (target == null) return;
 
         int sw = mc.getWindow().getScaledWidth();
@@ -441,7 +441,7 @@ public final class PypsenFeatures {
     }
 
     private static void drawTargetTrail(DrawContext ctx, MinecraftClient mc, int cx, int cy, int color) {
-        LivingEntity target = aiTarget != null && aiTarget.isAlive() ? aiTarget : PypsenClient.getAuraTarget();
+        LivingEntity target = aiAuraOn && aiTarget != null && aiTarget.isAlive() ? aiTarget : null;
         if (target == null) return;
         int[] size = new int[2];
         double[] focal = new double[1];
@@ -494,7 +494,7 @@ public final class PypsenFeatures {
     // ══════════ AI KILLAURA ══════════
 
     private static void tickAiAura(MinecraftClient mc, PlayerEntity p) {
-        if (!aiAuraOn) { aiTarget = null; return; }
+        if (!aiAuraOn || PypsenClient.auraEngine == 0) { aiTarget = null; return; }
         if (!aiUseLearning) weights = presetWeights.clone();
 
         float range = Math.max(1f, aiRange);

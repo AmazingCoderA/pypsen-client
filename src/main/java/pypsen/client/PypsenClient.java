@@ -153,6 +153,9 @@ public class PypsenClient implements ClientModInitializer {
     public static int godModeMode = 0;
 
     public static int speedBypass = 0, auraBypass = 0, flyBypass = 0, noclipBypass = 0;
+    public static final String[] AURA_ENGINES = {"Classic", "AI", "Both"};
+    public static int auraEngine = 0;
+    public static float bypassVariation = 0.6f;
     public static final String[] BYPASS_NAMES = {"None", "Vanilla", "Timer", "Strafe", "NCP", "Matrix", "Grim", "Funtime", "ReallyWorld", "Vulcan", "Spartan", "Grim AC", "Polar AC", "Intave", "Hyper", "NCP+", "Grim+", "Intave+", "Vulcan+", "Matrix+", "Polar+",
             "Quantum", "Nebula", "Zenith", "Aero", "Pulse", "Drift", "Skywalker", "Phantom", "Silent Sky", "Turbo Sky", "Orbit", "Glide", "Matrix V2", "AAC+", "Spartan+", "Polar V2", "Intave V2", "Grim V2", "Hyper V2", "Vanilla Air", "Smooth Fly", "Step Fly", "Guard", "Nova", "Aurora"};
     public static final String[] NOCLIP_MODES = {"Vanilla", "VClip", "HClip", "Packet", "Phantom Step", "Ghost VClip", "Perk", "Side Step", "Sky Lift", "Silent Axis", "Smart Glide", "Matrix Steps", "Vulcan Glide", "Intave Drift", "Polar Hop", "Hyper Step", "No Fall Down", "Soft Slide", "Quantum", "Nebula", "Zenith", "Aero", "Pulse", "Drift", "Phantom", "Orbit", "Tunnel", "Ghost Lift", "Void Step", "Rapid V", "Nova", "Aurora"};
@@ -271,6 +274,8 @@ public class PypsenClient implements ClientModInitializer {
                 if (speedOn)       lines.add("\u00a7bSpeed \u00a77" + String.format("%.1f", speedVal) + " [" + hudBypasses[MathHelper.clamp(speedBypass, 0, hudBypasses.length - 1)] + "]");
                 if (auraOn)        lines.add("\u00a7cKillAura \u00a77" + String.format("%.1f", auraRange) + " [" + hudBypasses[MathHelper.clamp(auraBypass, 0, hudBypasses.length - 1)] + "]"
                         + (auraNotNear ? " \u00a7eNOT NEAR " + String.format("%.1f", auraNotNearRange) + "m" : ""));
+                if (auraOn || PypsenFeatures.aiAuraOn) lines.add("\u00a78Aura Engine \u00a77" + AURA_ENGINES[MathHelper.clamp(auraEngine, 0, AURA_ENGINES.length - 1)]
+                        + " \u00a78Variation \u00a77" + String.format("%.0f%%", bypassVariation * 100f));
                 if (hitboxOn)      lines.add("\u00a7eHitbox \u00a77" + String.format("%.1f", hitboxVal));
                 if (flyOn)         lines.add("\u00a7dFly \u00a77" + String.format("%.1f", flySpeed) + " [" + hudBypasses[MathHelper.clamp(flyBypass, 0, hudBypasses.length - 1)] + "]"
                         + (flyCreativeMimic ? " \u00a7aMIMIC" : ""));
@@ -637,6 +642,7 @@ public class PypsenClient implements ClientModInitializer {
             // ── SPIDER ──
             if (spiderOn && p.horizontalCollision) {
                 float spd = MathHelper.clamp(spiderSpeed, 0.5f, 4f);
+                spd *= (float) MathHelper.clamp(1.0 + bypassShape(spiderMode, p.age) * bypassVariation * 0.25, 0.7f, 1.4f);
                 if (spiderMode == 0) { // Vanilla
                     Vec3d v = p.getVelocity();
                     p.setVelocity(v.x, 0.2 * spd, v.z);
@@ -782,6 +788,9 @@ public class PypsenClient implements ClientModInitializer {
                 p.fallDistance = 0;
                 double step = MathHelper.clamp(noclipStep, 0.05f, 4f);
                 Vec3d delta = noclipMoveDelta(p, step);
+                double ncShape = bypassShape(noclipBypass, p.age);
+                double ncMul = MathHelper.clamp(1.0 + ncShape * bypassVariation * 0.25, 0.65, 1.5);
+                delta = new Vec3d(delta.x * ncMul, delta.y * ncMul, delta.z * ncMul);
                 if (noclipBypass == 0) { // Vanilla: full 3-axis movement
                     p.setVelocity(delta.x, delta.y, delta.z);
                 } else if (noclipBypass == 1) { // VClip: vertical, but horizontal keys also work
@@ -1183,6 +1192,9 @@ public class PypsenClient implements ClientModInitializer {
                             vx = spartan.x; vz = spartan.z;
                         }
                     }
+                    double shape = bypassShape(speedBypass, p.age);
+                    double mul = MathHelper.clamp(1.0 + shape * bypassVariation * 0.45, 0.55, 1.75);
+                    vx *= mul; vz *= mul;
                     p.setVelocity(vx, p.getVelocity().y, vz);
                 }
             }
@@ -1245,6 +1257,10 @@ public class PypsenClient implements ClientModInitializer {
                     default -> vy = flyCustomVertical + Math.sin(p.age * 0.1) * flyCustomPulse;
                 }
                 if (flyBypass >= BYPASS_NAMES.length) vy = flyCustomVertical + Math.sin(p.age * 0.1) * flyCustomPulse;
+                double flyShape = bypassShape(flyBypass, p.age);
+                double hMul = MathHelper.clamp(1.0 + flyShape * bypassVariation * 0.35, 0.6, 1.6);
+                vx *= hMul; vz *= hMul;
+                vy += flyVerticalShape(flyBypass, p.age) * bypassVariation * 0.01;
                 p.setVelocity(vx, vy, vz);
             } else {
                 applyFlyCreativeMimic(p, false);
@@ -1254,7 +1270,9 @@ public class PypsenClient implements ClientModInitializer {
             }
 
             // ── KILLAURA (ROBUST 1.9+ LOGIC) ──
-            if (auraOn) {
+            // Classic and AI engines are independent. "Both" is opt-in so the
+            // two never fight over rotations or attack cooldowns by default.
+            if (auraOn && auraEngine != 1) {
                 auraTick++;
 
                 // Smooth rotation logic
@@ -1572,6 +1590,12 @@ public class PypsenClient implements ClientModInitializer {
                                         if (p.distanceTo(target) > 3.0f) canHit = false; // Strict reach
                                         if (Math.abs(p.getYaw() - targetYaw) > 20) canHit = false; // Must be looking at target
                                     }
+                                }
+                                // Extended/custom bypasses get their own rhythm.
+                                // Built-in preset indices (0, 4, 7, 8) are untouched.
+                                if (canHit && auraBypass >= 14) {
+                                    double shape = bypassShape(auraBypass, auraTick);
+                                    canHit = shape > -0.55 + MathHelper.clamp(bypassVariation, 0f, 1f) * 0.15;
                                 }
                             }
 
@@ -1963,6 +1987,32 @@ public class PypsenClient implements ClientModInitializer {
 
     public static void removeBypassName(String name) {
         if (customBypassNames.remove(name)) saveConfig();
+    }
+
+    /** Distinct deterministic timing/velocity shape for every bypass index. */
+    private static double bypassShape(int mode, int tick) {
+        int m = ((mode % 12) + 12) % 12;
+        return switch (m) {
+            case 0  -> Math.sin(tick * 0.05);
+            case 1  -> Math.cos(tick * 0.07);
+            case 2  -> tick % 3 == 0 ? 1.0 : -0.35;
+            case 3  -> tick % 5 < 2 ? 0.8 : -0.2;
+            case 4  -> Math.sin(tick * 0.13) * 0.7;
+            case 5  -> Math.cos(tick * 0.11) * 0.8;
+            case 6  -> tick % 4 == 0 ? 1.2 : -0.3;
+            case 7  -> Math.sin(tick * 0.03 + 1.2);
+            case 8  -> Math.cos(tick * 0.09 + 0.6);
+            case 9  -> (tick / 2) % 3 == 0 ? 0.9 : -0.25;
+            case 10 -> Math.sin(tick * 0.17) * 0.6;
+            default -> Math.cos(tick * 0.15 + 2.0);
+        };
+    }
+
+    /** Extra vertical shape for Fly; zero-drift profiles keep their silence. */
+    private static double flyVerticalShape(int mode, int tick) {
+        int m = ((mode % 10) + 10) % 10;
+        if (m == 0 || m == 3 || m == 6) return 0.0;
+        return Math.sin(tick * (0.04 + (mode % 5) * 0.02)) * 0.5;
     }
 
     /**
@@ -2668,6 +2718,8 @@ public class PypsenClient implements ClientModInitializer {
             writer.write("triggerCps=" + triggerCps + "\n");
             writer.write("auraMode=" + auraMode + "\n");
             writer.write("auraBypass=" + auraBypass + "\n");
+            writer.write("auraEngine=" + auraEngine + "\n");
+            writer.write("bypassVariation=" + bypassVariation + "\n");
             writer.write("speedBypass=" + speedBypass + "\n");
             writer.write("flyBypass=" + flyBypass + "\n");
             writer.write("auraRotMode=" + auraRotMode + "\n");
@@ -2857,6 +2909,8 @@ public class PypsenClient implements ClientModInitializer {
                     case "triggerCps" -> triggerCps = Float.parseFloat(val);
                     case "auraMode" -> auraMode = Integer.parseInt(val);
                     case "auraBypass" -> auraBypass = Integer.parseInt(val);
+                    case "auraEngine" -> auraEngine = Integer.parseInt(val);
+                    case "bypassVariation" -> bypassVariation = Float.parseFloat(val);
                     case "speedBypass" -> speedBypass = Integer.parseInt(val);
                     case "flyBypass" -> flyBypass = Integer.parseInt(val);
                     case "auraRotMode" -> auraRotMode = Integer.parseInt(val);
@@ -3078,6 +3132,8 @@ public class PypsenClient implements ClientModInitializer {
             speedBypass = MathHelper.clamp(speedBypass, 0, bypassCount - 1);
             auraBypass = MathHelper.clamp(auraBypass, 0, bypassCount - 1);
             flyBypass = MathHelper.clamp(flyBypass, 0, bypassCount - 1);
+            auraEngine = MathHelper.clamp(auraEngine, 0, AURA_ENGINES.length - 1);
+            bypassVariation = MathHelper.clamp(bypassVariation, 0f, 1f);
             godModeMode = MathHelper.clamp(godModeMode, 0, GODMODE_MODES.length - 1);
             noWebMode = MathHelper.clamp(noWebMode, 0, NOWEB_MODES.length - 1);
             noclipBypass = MathHelper.clamp(noclipBypass, 0, NOCLIP_MODES.length + customBypassNames.size() - 1);
@@ -3410,7 +3466,8 @@ public class PypsenClient implements ClientModInitializer {
             }).dimensions(x, y, w / 2 - 2, 20).build());
             addDrawableChild(ButtonWidget.builder(Text.literal("Bypass List"), b -> {
                 if (client != null) client.setScreen(new BypassScreen(this));
-            }).dimensions(x + w / 2 + 2, y, w / 2 - 2, 20).build()); y += 26;
+            }).dimensions(x + w / 2 + 2, y, w / 2 - 2, 20).build()); y += 22;
+            addDrawableChild(slider(x, y, w, "Bypass Variation", 0f, 1f, bypassVariation, v -> bypassVariation = v)); y += 26;
 
             addDrawableChild(ButtonWidget.builder(Text.literal("\u00a7e--- PRESETS ---"), b -> {}).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Funtime"), b -> applyPreset("Funtime")).dimensions(x, y, w/2 - 2, 20).build());
@@ -3436,6 +3493,7 @@ public class PypsenClient implements ClientModInitializer {
             addDrawableChild(ButtonWidget.builder(Text.literal("Predict: " + (auraPredict ? "§aON" : "§cOFF")), b -> { auraPredict = !auraPredict; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Randomize: " + (auraRandomize ? "§aON" : "§cOFF")), b -> { auraRandomize = !auraRandomize; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(cycleBtn(x, y, w, "Bypass", allBypassNames(), auraBypass, v -> { auraBypass = v; rebuild(); })); y += 22;
+            addDrawableChild(cycleBtn(x, y, w, "Engine", AURA_ENGINES, auraEngine, v -> { auraEngine = v; rebuild(); })); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("NOT NEAR: " + (auraNotNear ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraNotNear = !auraNotNear; rebuild(); }).dimensions(x, y, w, 20).build()); y += 22;
             addDrawableChild(slider(x, y, w, "Keep Distance", 0.5f, 8f, auraNotNearRange, v -> auraNotNearRange = v)); y += 22;
             addDrawableChild(ButtonWidget.builder(Text.literal("Rotation: " + (auraRotationEnabled ? "\u00a7aON" : "\u00a7cOFF")), b -> { auraRotationEnabled = !auraRotationEnabled; rebuild(); }).dimensions(x, y, w/2 - 2, 20).build());
@@ -3885,6 +3943,7 @@ public class PypsenClient implements ClientModInitializer {
                 addB(0, "Predict", auraPredict, v->auraPredict=v);
                 addB(0, "Randomize", auraRandomize, v->auraRandomize=v);
                 addC(0, "Bypass", allBypassNames(), auraBypass, v->auraBypass=v);
+                addC(0, "Engine", AURA_ENGINES, auraEngine, v->auraEngine=v);
                 addB(0, "NOT NEAR", auraNotNear, v->auraNotNear=v);
                 addS(0, "Keep Distance", 0.5f, 8f, auraNotNearRange, v->auraNotNearRange=v);
                 addB(0, "Rotation", auraRotationEnabled, v->auraRotationEnabled=v);
@@ -4132,6 +4191,7 @@ public class PypsenClient implements ClientModInitializer {
             addAt(3, y3, ButtonWidget.builder(Text.literal("Bypass List"), b -> {
                 MinecraftClient.getInstance().setScreen(new BypassScreen(this));
             }).dimensions(cX[3], y3, 150, 20).build()); curY[3] += 22;
+            addS(3, "Bypass Variation", 0f, 1f, bypassVariation, v->bypassVariation=v);
 
             for (int i = 0; i < 4; i++) contentHeight[i] = curY[i];
         }
